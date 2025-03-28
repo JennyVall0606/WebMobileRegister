@@ -1,28 +1,21 @@
 require('dotenv').config();
 const express = require('express');
-const mysql = require('mysql2');
+const db = require('./db'); // ✅ Importamos la conexión desde db.js
 
 const app = express();
 app.use(express.json());
 
-// Conexión a la base de datos
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: process.env.DB_PORT,
-});
+// Importar rutas
+const registerRoutes = require('./routes/register');
+app.use('/register', registerRoutes);
 
-db.connect((err) => {
-  if (err) {
-    console.error('❌ Error conectando a MySQL:', err);
-    return;
-  }
-  console.log('✅ Conectado a la base de datos MySQL');
-});
+const vaccinesRoutes = require('./routes/vaccines');
+app.use('/vaccines', vaccinesRoutes);
 
-// Ruta de prueba
+const weighingRoutes = require('./routes/weighing');
+app.use('/weighing', weighingRoutes);
+
+// Ruta de prueba para verificar la conexión a MySQL
 app.get('/test-db', (req, res) => {
   db.query('SELECT 1 + 1 AS result', (err, results) => {
     if (err) {
