@@ -18,6 +18,7 @@ app.use('/weighing', weighingRoutes);
 // Ruta de prueba para verificar la conexión a MySQL
 app.get('/test-db', (req, res) => {
   db.query('SELECT 1 + 1 AS result', (err, results) => {
+    
     if (err) {
       return res.status(500).json({ error: 'Error en la consulta' });
     }
@@ -28,5 +29,5 @@ app.get('/test-db', (req, res) => {
 // Iniciar servidor
 const PORT = 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+  console.log(` Servidor corriendo en http://localhost:${PORT}`);
 });
