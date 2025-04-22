@@ -5,9 +5,14 @@ const db = require('./db');
 const app = express();
 app.use(express.json());
 
+const cors = require('cors');
+app.use(cors());
+
+
 // Importar rutas
 const authRoutes = require('./routes/auth'); // 👈 AÑADIDO
-app.use('/', authRoutes); // 👈 AÑADIDO
+app.use('/api', authRoutes);
+
 
 const registerRoutes = require('./routes/register');
 app.use('/register', registerRoutes);
@@ -32,6 +37,6 @@ app.get('/test-db', (req, res) => {
 
 // Iniciar servidor
 const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+app.listen(3000, '0.0.0.0', () => {
+  console.log('Servidor escuchando en http://192.168.1.4:3000');
 });
