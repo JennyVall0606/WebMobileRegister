@@ -43,18 +43,17 @@ router.post('/login', async (req, res) => {
       return res.status(404).json({ mensaje: 'Usuario no encontrado' });
     }
 
-    // const esCorrecta = await bcrypt.compare(contraseña, usuario.contraseña);
+    const esCorrecta = await bcrypt.compare(contraseña, usuario.contraseña);
 
-    // if (!esCorrecta) {
-    //   return res.status(401).json({ mensaje: 'Contraseña incorrecta' });
-    // }
-    console.log('contraseña enviada:', contraseña);
-    console.log('contraseña en base de datos:', usuario.contraseña);
-
-
-    if (contraseña !== usuario.contraseña) {
+    if (!esCorrecta) {
       return res.status(401).json({ mensaje: 'Contraseña incorrecta' });
     }
+   
+
+
+    // if (contraseña !== usuario.contraseña) {
+    //   return res.status(401).json({ mensaje: 'Contraseña incorrecta' });
+    // }
     
 
     const token = generarToken(usuario);
