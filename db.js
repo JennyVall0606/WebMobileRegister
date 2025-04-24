@@ -1,12 +1,17 @@
 const mysql = require('mysql2/promise'); // 👈 importante: con /promise
 
-const db = mysql.createPool({
+const pool = mysql.createPool({
   host: 'localhost',
   user: 'root',
   password: '360complemento',
   database: 'registro_ganadero',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
 });
 
 
-module.exports = db; // ✅ Exportamos db
+
+
+module.exports = pool;
 
