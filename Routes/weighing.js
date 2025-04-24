@@ -2,106 +2,84 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db'); 
 
-
-
-router.post('/add', (req, res) => {
+router.post('/add', async (req, res) => {
     const { chip_animal, fecha_pesaje, peso_kg } = req.body;
 
     if (!chip_animal || !fecha_pesaje || !peso_kg) {
         return res.status(400).json({ error: "Todos los campos son obligatorios" });
     }
 
-    // Verificar si el chip_animal existe en registro_animal
-    const checkQuery = `SELECT id FROM registro_animal WHERE chip_animal = ?`;
+    try {
+        const [checkResult] = await db.query(`SELECT id FROM registro_animal WHERE chip_animal = ?`, [chip_animal]);
 
-    db.query(checkQuery, [chip_animal], (err, results) => {
-        if (err) {
-            console.error("Error al verificar el chip_animal:", err);
-            return res.status(500).json({ error: "Error al verificar el chip_animal" });
-        }
-
-        if (results.length === 0) {
+        if (checkResult.length === 0) {
             return res.status(404).json({ error: "El chip_animal no está registrado" });
         }
 
-        const registro_animal_id = results[0].id;
+        const registro_animal_id = checkResult[0].id;
 
-        // Insertar el pesaje en la tabla correcta
-        const insertQuery = `INSERT INTO historico_pesaje (registro_animal_id, chip_animal, fecha_pesaje, peso_kg) VALUES (?, ?, ?, ?)`;
+        const [insertResult] = await db.query(
+            `INSERT INTO historico_pesaje (registro_animal_id, chip_animal, fecha_pesaje, peso_kg) VALUES (?, ?, ?, ?)`,
+            [registro_animal_id, chip_animal, fecha_pesaje, peso_kg]
+        );
 
-        db.query(insertQuery, [registro_animal_id, chip_animal, fecha_pesaje, peso_kg], (err, results) => {
-            if (err) {
-                console.error("Error al agregar el pesaje:", err);
-                return res.status(500).json({ error: "Error al agregar el pesaje" });
-            }
-            res.status(201).json({ message: "Pesaje agregado correctamente", id: results.insertId });
-        });
-    });
+        res.status(201).json({ message: "Pesaje agregado correctamente", id: insertResult.insertId });
+
+    } catch (err) {
+        console.error("Error al agregar el pesaje:", err);
+        res.status(500).json({ error: "Error al agregar el pesaje" });
+    }
 });
 
-router.delete('/delete/:id', (req, res) => {
-    const { id } = req.params;
+router.delete('/delete/:chip_animal', async (req, res) => {
+    const { chip_animal } = req.params;
 
-    // Verificar si el pesaje existe antes de eliminarlo
-    const checkQuery = `SELECT * FROM historico_pesaje WHERE id = ?`;
+    try {
+        const [checkResult] = await db.query(`SELECT * FROM historico_pesaje WHERE chip_animal = ?`, [chip_animal]);
 
-    db.query(checkQuery, [id], (err, results) => {
-        if (err) {
-            console.error("Error al verificar el pesaje:", err);
-            return res.status(500).json({ error: "Error al verificar el pesaje" });
-        }
-
-        if (results.length === 0) {
+        if (checkResult.length === 0) {
             return res.status(404).json({ error: "Pesaje no encontrado" });
         }
 
-        // Si existe, eliminarlo
-        const deleteQuery = `DELETE FROM historico_pesaje WHERE id = ?`;
+        await db.query(`DELETE FROM historico_pesaje WHERE chip_animal = ?`, [chip_animal]);
 
-        db.query(deleteQuery, [id], (err, results) => {
-            if (err) {
-                console.error("Error al eliminar el pesaje:", err);
-                return res.status(500).json({ error: "Error al eliminar el pesaje" });
-            }
+        res.json({ message: "Pesaje eliminado correctamente" });
 
-            res.json({ message: "Pesaje eliminado correctamente" });
-        });
-    });
+    } catch (err) {
+        console.error("Error al eliminar el pesaje:", err);
+        res.status(500).json({ error: "Error al eliminar el pesaje" });
+    }
 });
 
-router.get('/all', (req, res) => {
-    const query = `SELECT * FROM vista_historico_pesaje`;
-
-    db.query(query, (err, results) => {
-        if (err) {
-            console.error("Error al obtener los pesajes:", err);
-            return res.status(500).json({ error: "Error al obtener los pesajes" });
-        }
-
+router.get('/all', async (req, res) => {
+    try {
+        const [results] = await db.query(`SELECT * FROM vista_historico_pesaje`);
         res.json(results);
-    });
+    } catch (err) {
+        console.error("Error al obtener los pesajes:", err);
+        res.status(500).json({ error: "Error al obtener los pesajes" });
+    }
 });
 
-router.get('/:chip_animal', (req, res) => {
+router.get('/:chip_animal', async (req, res) => {
     const { chip_animal } = req.params;
 
-    const query = `SELECT * FROM vista_historico_pesaje WHERE chip_animal = ?`;
-
-    db.query(query, [chip_animal], (err, results) => {
-        if (err) {
-            console.error("Error al obtener el pesaje:", err);
-            return res.status(500).json({ error: "Error al obtener el pesaje" });
-        }
+    try {
+        const [results] = await db.query(`SELECT * FROM vista_historico_pesaje WHERE chip_animal = ?`, [chip_animal]);
 
         if (results.length === 0) {
             return res.status(404).json({ error: "No se encontró un pesaje para este chip_animal" });
         }
 
-        res.json(results[0]); // Retorna solo el primer registro encontrado
-    });
+        res.json(results[0]);
+
+    } catch (err) {
+        console.error("Error al obtener el pesaje:", err);
+        res.status(500).json({ error: "Error al obtener el pesaje" });
+    }
 });
 
-router.put('/:chip_animal', (req, res) => {
+router.put('/:chip_animal', async (req, res) => {
     const { chip_animal } = req.params;
     const { fecha_pesaje, peso_kg } = req.body;
 
@@ -109,26 +87,22 @@ router.put('/:chip_animal', (req, res) => {
         return res.status(400).json({ error: "Todos los campos son obligatorios" });
     }
 
-    const query = `UPDATE historico_pesaje SET fecha_pesaje = ?, peso_kg = ? WHERE chip_animal = ?`;
+    try {
+        const [updateResult] = await db.query(
+            `UPDATE historico_pesaje SET fecha_pesaje = ?, peso_kg = ? WHERE chip_animal = ?`,
+            [fecha_pesaje, peso_kg, chip_animal]
+        );
 
-    db.query(query, [fecha_pesaje, peso_kg, chip_animal], (err, results) => {
-        if (err) {
-            console.error("Error al actualizar el pesaje:", err);
-            return res.status(500).json({ error: "Error al actualizar el pesaje" });
-        }
-
-        if (results.affectedRows === 0) {
+        if (updateResult.affectedRows === 0) {
             return res.status(404).json({ error: "No se encontró un pesaje para este chip_animal" });
         }
 
         res.json({ message: "Pesaje actualizado correctamente" });
-    });
+
+    } catch (err) {
+        console.error("Error al actualizar el pesaje:", err);
+        res.status(500).json({ error: "Error al actualizar el pesaje" });
+    }
 });
 
 module.exports = router;
-
-
-
-
-
-
