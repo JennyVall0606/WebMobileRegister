@@ -60,7 +60,6 @@ router.get('/all', async (req, res) => {
         res.status(500).json({ error: "Error al obtener los pesajes" });
     }
 });
-
 router.get('/historico-pesaje', async (req, res) => {
     try {
         const [rows] = await db.query(`
@@ -69,20 +68,20 @@ router.get('/historico-pesaje', async (req, res) => {
             ORDER BY fecha_pesaje DESC
         `);
         
-     
+      // Si no hay registros, enviar mensaje indicando que no se encontraron datos
       if (rows.length === 0) {
         return res.status(404).json({ error: 'No se encontraron registros de pesaje' });
       }
   
-    
+      // Mapear los resultados para que tengan el formato correcto
       const response = rows.map(row => ({
         id: row.id,
-        fecha: row.fecha_pesaje,  
-        chip: row.chip_animal,    
-        peso: row.peso_kg         
+        fecha: row.fecha_pesaje,  // Lo mapeamos como 'fecha' en la respuesta
+        chip: row.chip_animal,    // Lo mapeamos como 'chip' en la respuesta
+        peso: row.peso_kg         // Lo mapeamos como 'peso' en la respuesta
       }));
   
-      res.json(response);  
+      res.json(response);  // Devolver la respuesta en formato JSON
     } catch (error) {
       console.error('Error al obtener histórico:', error);
       res.status(500).json({ message: 'Error interno del servidor' });
