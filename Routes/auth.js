@@ -51,9 +51,7 @@ router.post('/login', async (req, res) => {
    
 
 
-    // if (contraseña !== usuario.contraseña) {
-    //   return res.status(401).json({ mensaje: 'Contraseña incorrecta' });
-    // }
+
     
 
     const token = generarToken(usuario);

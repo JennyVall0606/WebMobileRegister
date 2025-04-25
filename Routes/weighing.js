@@ -61,6 +61,35 @@ router.get('/all', async (req, res) => {
     }
 });
 
+router.get('/historico-pesaje', async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT id, fecha_pesaje, chip_animal, peso_kg
+            FROM registro_ganadero.vista_historico_pesaje
+            ORDER BY fecha_pesaje DESC
+        `);
+        
+     
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'No se encontraron registros de pesaje' });
+      }
+  
+    
+      const response = rows.map(row => ({
+        id: row.id,
+        fecha: row.fecha_pesaje,  
+        chip: row.chip_animal,    
+        peso: row.peso_kg         
+      }));
+  
+      res.json(response);  
+    } catch (error) {
+      console.error('Error al obtener histórico:', error);
+      res.status(500).json({ message: 'Error interno del servidor' });
+    }
+  });
+
+
 router.get('/:chip_animal', async (req, res) => {
     const { chip_animal } = req.params;
 
@@ -104,5 +133,7 @@ router.put('/:chip_animal', async (req, res) => {
         res.status(500).json({ error: "Error al actualizar el pesaje" });
     }
 });
+
+
 
 module.exports = router;

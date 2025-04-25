@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-// Crear nuevo registro
+
 router.post('/add', async (req, res) => {
   let { chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones } = req.body;
 
@@ -34,7 +34,7 @@ router.post('/add', async (req, res) => {
   }
 });
 
-// Eliminar registro
+
 router.delete('/delete/:chip_animal', async (req, res) => {
   const { chip_animal } = req.params;
   const query = `DELETE FROM registro_ganadero.registro_animal WHERE chip_animal = ?`;
@@ -50,7 +50,7 @@ router.delete('/delete/:chip_animal', async (req, res) => {
   }
 });
 
-// Obtener todos los registros
+
 router.get('/all', async (req, res) => {
   const query = `SELECT * FROM registro_ganadero.registro_animal`;
 
@@ -63,7 +63,7 @@ router.get('/all', async (req, res) => {
   }
 });
 
-// Obtener un solo animal por chip
+
 router.get('/animal/:chip_animal', async (req, res) => {
   const { chip_animal } = req.params;
   const query = `SELECT * FROM registro_ganadero.registro_animal WHERE chip_animal = ?`;
@@ -79,7 +79,7 @@ router.get('/animal/:chip_animal', async (req, res) => {
   }
 });
 
-// Actualizar un animal
+
 router.put('/update/:chip_animal', async (req, res) => {
   const { chip_animal } = req.params;
   let { peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones } = req.body;
@@ -112,7 +112,7 @@ router.put('/update/:chip_animal', async (req, res) => {
   }
 });
 
-// Obtener todas las razas
+
 router.get('/razas', async (req, res) => {
   const query = `SELECT * FROM registro_ganadero.raza`;
 

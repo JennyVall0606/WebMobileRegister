@@ -9,7 +9,7 @@ const cors = require('cors');
 app.use(cors());
 
 
-// Importar rutas
+// Importacion de rutas
 const authRoutes = require('./routes/auth'); // 👈 AÑADIDO
 app.use('/api', authRoutes);
 
@@ -35,7 +35,7 @@ app.get('/test-db', (req, res) => {
   });
 });
 
-// Iniciar servidor
+
 const PORT = 3000;
 app.listen(3000, '0.0.0.0', () => {
   console.log('Servidor escuchando en http://192.168.1.4:3000');

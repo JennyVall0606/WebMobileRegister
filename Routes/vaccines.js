@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-// Método POST para registrar una vacuna
+
 router.post('/add', async (req, res) => {
     let { fecha_vacuna, tipo_vacunas_id_tipo_vacuna, chip_animal, nombre_vacunas_id_vacuna, dosis_administrada, observaciones } = req.body;
 
@@ -55,7 +55,7 @@ router.delete('/delete/:chip_animal', async (req, res) => {
     const { chip_animal } = req.params;
 
     try {
-        // Primero, obtener el ID del registro del animal usando el chip
+        
         const [animal] = await db.query('SELECT id FROM registro_animal WHERE chip_animal = ?', [chip_animal]);
 
         if (animal.length === 0) {
@@ -64,7 +64,7 @@ router.delete('/delete/:chip_animal', async (req, res) => {
 
         const registro_animal_id = animal[0].id;
 
-        // Luego, eliminar el registro de vacuna asociado al registro del animal
+        
         const [result] = await db.query('DELETE FROM historico_vacuna WHERE registro_animal_id = ?', [registro_animal_id]);
 
         if (result.affectedRows === 0) {
@@ -88,6 +88,36 @@ router.get('/all', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener las vacunas' });
     }
 });
+router.get('/historico-vacunas', async (req, res) => {
+    try {
+      const [rows] = await db.query(`
+        SELECT id, chip_animal, fecha_vacuna, tipo_vacuna, nombre, dosis_administrada, observaciones
+        FROM registro_ganadero.vista_historico_vacuna
+        ORDER BY fecha_vacuna DESC
+      `);
+  
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'No se encontraron registros de vacunas' });
+      }
+  
+     
+      const response = rows.map(row => ({
+        id: row.id,
+        fecha: row.fecha_vacuna,
+        chip: row.chip_animal,
+        nombre: row.nombre,
+        tipo: row.tipo_vacuna,
+        dosis: row.dosis_administrada,
+        obs: row.observaciones
+      }));
+  
+      res.json(response);
+    } catch (error) {
+      console.error('Error al obtener histórico de vacunas:', error);
+      res.status(500).json({ message: 'Error interno del servidor' });
+    }
+  });
+  
 
 router.get('/animal/:chip_animal', async (req, res) => {
     const { chip_animal } = req.params;
@@ -154,7 +184,7 @@ router.put('/:chip_animal', async (req, res) => {
     }
 });
 
-// Obtener todos los tipos de vacunas
+
 router.get('/tipos-vacuna', async (req, res) => {
     try {
         const [tipos] = await db.query('SELECT id_tipo_vacuna AS value, tipo AS label FROM tipo_vacunas');
@@ -164,7 +194,7 @@ router.get('/tipos-vacuna', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener tipos de vacuna' });
     }
 });
-// Obtener todos los nombres de vacunas
+
 router.get('/nombres-vacuna', async (req, res) => {
     try {
         const [nombres] = await db.query('SELECT id_vacuna AS value, nombre AS label FROM nombre_vacunas');
