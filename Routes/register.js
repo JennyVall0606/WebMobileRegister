@@ -112,4 +112,18 @@ router.put('/update/:chip_animal', async (req, res) => {
   }
 });
 
+// Obtener todas las razas
+router.get('/razas', async (req, res) => {
+  const query = `SELECT * FROM registro_ganadero.raza`;
+
+  try {
+    const [results] = await db.query(query);
+    res.status(200).json(results);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener las razas' });
+  }
+});
+
+
 module.exports = router;
