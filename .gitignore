@@ -1,0 +1,7 @@
+# Ignorar la carpeta uploads
+/uploads/
+
+# Otros archivos que podrías querer ignorar
+node_modules/
+.env
+
