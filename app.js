@@ -1,18 +1,16 @@
 require('dotenv').config();
 const express = require('express');
 const db = require('./db');
+const cors = require('cors');
 
 const app = express();
 app.use(express.json());
-
-const cors = require('cors');
 app.use(cors());
 
 
 // Importacion de rutas
-const authRoutes = require('./routes/auth'); // 👈 AÑADIDO
+const { router: authRoutes } = require('./routes/auth');
 app.use('/api', authRoutes);
-
 
 const registerRoutes = require('./routes/register');
 app.use('/register', registerRoutes);
