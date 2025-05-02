@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const db = require('./db');
 const cors = require('cors');
+const path = require('path');
+
 
 const app = express();
 app.use(express.json());
@@ -20,6 +22,8 @@ app.use('/vaccines', vaccinesRoutes);
 
 const weighingRoutes = require('./routes/weighing');
 app.use('/weighing', weighingRoutes);
+// Servir imágenes estáticas
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 
 
