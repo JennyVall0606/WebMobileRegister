@@ -142,7 +142,7 @@ router.get("/animal/:chip_animal", async (req, res) => {
   }
 });
 
-router.put("/update/:chip_animal", upload.single("foto"), async (req, res) => {
+router.put("/update/:id", upload.single("foto"), async (req, res) => {
   const { chip_animal } = req.params;
   let {
     peso_nacimiento,
