@@ -29,6 +29,10 @@ router.post('/add', async (req, res) => {
             tipo_vacunas_id_tipo_vacuna = 11;
         }
 
+        if (typeof dosis_administrada === 'string' && !dosis_administrada.includes(' ')) {
+            return res.status(400).json({ error: 'La dosis administrada debe incluir la cantidad y la unidad (ej. "3 ml")' });
+        }
+
         const insertQuery = `
             INSERT INTO historico_vacuna 
             (fecha_vacuna, tipo_vacunas_id_tipo_vacuna, registro_animal_id, nombre_vacunas_id_vacuna, dosis_administrada, observaciones) 
