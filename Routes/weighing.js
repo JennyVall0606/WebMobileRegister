@@ -107,7 +107,45 @@ router.get('/:chip_animal', async (req, res) => {
     }
 });
 
-router.put('/:chip_animal', async (req, res) => {
+
+
+router.put('/:id', async (req, res) => {
+    const { id } = req.params;  // Obtenemos el 'id' desde los parámetros de la ruta
+    const { fecha_pesaje, peso_kg } = req.body;
+
+    if (!fecha_pesaje || !peso_kg) {
+        return res.status(400).json({ error: "Todos los campos son obligatorios" });
+    }
+
+    try {
+        // Verificar si existe el pesaje con ese ID
+        const [pesajeResult] = await db.query(
+            `SELECT * FROM historico_pesaje WHERE id = ?`, [id]
+        );
+
+        if (pesajeResult.length === 0) {
+            return res.status(404).json({ error: "Pesaje no encontrado con el ID proporcionado" });
+        }
+
+        // Si existe, proceder con la actualización
+        const [updateResult] = await db.query(
+            `UPDATE historico_pesaje SET fecha_pesaje = ?, peso_kg = ? WHERE id = ?`,
+            [fecha_pesaje, peso_kg, id]
+        );
+
+        if (updateResult.affectedRows === 0) {
+            return res.status(404).json({ error: "No se pudo actualizar el pesaje" });
+        }
+
+        res.json({ message: "Pesaje actualizado correctamente" });
+
+    } catch (err) {
+        console.error("Error al actualizar el pesaje:", err);
+        res.status(500).json({ error: "Error al actualizar el pesaje" });
+    }
+});
+
+router.put('/chip/:chip_animal', async (req, res) => {
     const { chip_animal } = req.params;
     const { fecha_pesaje, peso_kg } = req.body;
 
@@ -132,6 +170,9 @@ router.put('/:chip_animal', async (req, res) => {
         res.status(500).json({ error: "Error al actualizar el pesaje" });
     }
 });
+
+
+
 
 
 

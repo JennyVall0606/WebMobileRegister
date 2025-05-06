@@ -157,9 +157,89 @@ router.get('/animal/:chip_animal', async (req, res) => {
     }
 });
 
-router.put('/:chip_animal', async (req, res) => {
-    const { chip_animal } = req.params;
+router.put('/:id', async (req, res) => {
+    console.log('Ruta PUT alcanzada'); // Asegúrate de que se está ejecutando la ruta
+    const { id } = req.params;
+    console.log("ID recibido:", id); // Verifica el id que llega
     const { fecha_vacuna, tipo_vacunas_id_tipo_vacuna, nombre_vacunas_id_vacuna, dosis_administrada, observaciones } = req.body;
+    console.log('Datos recibidos:', {
+        fecha_vacuna,
+        tipo_vacunas_id_tipo_vacuna,
+        nombre_vacunas_id_vacuna,
+        dosis_administrada,
+        observaciones
+    });
+    // Verifica que los campos no sean nulos antes de incluirlos en la consulta
+    const updateFields = [];
+    const values = [];
+
+    if (fecha_vacuna) {
+        updateFields.push('fecha_vacuna = ?');
+        values.push(fecha_vacuna);
+    }
+    if (tipo_vacunas_id_tipo_vacuna) {
+        updateFields.push('tipo_vacunas_id_tipo_vacuna = ?');
+        values.push(tipo_vacunas_id_tipo_vacuna);
+    }
+    if (nombre_vacunas_id_vacuna) {
+        updateFields.push('nombre_vacunas_id_vacuna = ?');
+        values.push(nombre_vacunas_id_vacuna);
+    }
+    if (dosis_administrada) {
+        updateFields.push('dosis_administrada = ?');
+        values.push(dosis_administrada);
+    }
+    if (observaciones !== undefined) {
+        updateFields.push('observaciones = ?');
+        values.push(observaciones);
+    }
+
+    // Si no hay campos para actualizar, regresa un error
+    if (updateFields.length === 0) {
+        return res.status(400).json({ error: 'No hay campos para actualizar' });
+    }
+
+    // Agregar el ID al final de los valores
+    values.push(id);
+
+    const updateQuery = `
+        UPDATE historico_vacuna
+        SET ${updateFields.join(', ')}
+        WHERE id = ?
+    `;
+
+    try {
+        const [result] = await db.query(updateQuery, values);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Vacuna no encontrada para actualizar' });
+        }
+
+        res.json({ message: 'Vacuna actualizada con éxito' });
+    } catch (error) {
+        console.error('❌ Error al actualizar vacuna:', error);
+        res.status(500).json({ error: 'Error al actualizar la vacuna' });
+    }
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+router.put('/chip/:chip_animal', async (req, res) => {
+    const { chip_animal } = req.params;
+    
+    const { fecha_vacuna, tipo_vacunas_id_tipo_vacuna, nombre_vacunas_id_vacuna, dosis_administrada, observaciones } = req.body;
+
+    
 
     try {
         const updateQuery = `

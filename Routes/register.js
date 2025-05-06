@@ -143,8 +143,9 @@ router.get("/animal/:chip_animal", async (req, res) => {
 });
 
 router.put("/update/:id", upload.single("foto"), async (req, res) => {
-  const { chip_animal } = req.params;
+  const chip_animal_original = req.params.id;
   let {
+    chip_animal, // nuevo valor que quieres guardar
     peso_nacimiento,
     raza_id_raza,
     fecha_nacimiento,
@@ -159,6 +160,7 @@ router.put("/update/:id", upload.single("foto"), async (req, res) => {
       `SELECT id_raza FROM registro_ganadero.raza WHERE id_raza = ?`,
       [raza_id_raza]
     );
+   
 
     if (razaResult.length === 0) {
       console.warn('Raza no encontrada, asignando "Otra Raza" (id 25)');
@@ -177,22 +179,25 @@ router.put("/update/:id", upload.single("foto"), async (req, res) => {
     let values;
 
     if (foto) {
-      queryUpdate = `
-        UPDATE registro_ganadero.registro_animal 
-        SET foto = ?, chip_animal = ?, peso_nacimiento = ?, raza_id_raza = ?, fecha_nacimiento = ?, id_madre = ?, id_padre = ?, enfermedades = ?, observaciones = ? 
-        WHERE chip_animal = ?`;
-      values = [
-        foto,
-        chip_animal,
-        peso_nacimiento,
-        raza_id_raza,
-        fecha_nacimiento,
-        id_madre,
-        id_padre,
-        enfermedades,
-        observaciones,
-        chip_animal,
-      ];
+      // con foto
+queryUpdate = `
+UPDATE registro_ganadero.registro_animal 
+SET foto = ?, chip_animal = ?, peso_nacimiento = ?, raza_id_raza = ?, fecha_nacimiento = ?, id_madre = ?, id_padre = ?, enfermedades = ?, observaciones = ? 
+WHERE chip_animal = ?`;
+
+values = [
+foto,
+chip_animal,            // nuevo chip
+peso_nacimiento,
+raza_id_raza,
+fecha_nacimiento,
+id_madre,
+id_padre,
+enfermedades,
+observaciones,
+chip_animal_original,   // chip actual que se usa para buscar
+];
+
     } else {
       queryUpdate = `
         UPDATE registro_ganadero.registro_animal 
@@ -215,7 +220,7 @@ router.put("/update/:id", upload.single("foto"), async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Registro no encontrado" });
     }
-
+    console.log("Resultado del UPDATE:", result);
     res
       .status(200)
       .json({
