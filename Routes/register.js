@@ -128,7 +128,7 @@ router.get("/all", async (req, res) => {
 
 router.get("/animal/:chip_animal", async (req, res) => {
   const { chip_animal } = req.params;
-  const query = `SELECT * FROM registro_ganadero.registro_animal WHERE chip_animal = ?`;
+  const query = `SELECT * FROM registro_ganadero.vista_registro_animal WHERE chip_animal = ?`;
 
   try {
     const [results] = await db.query(query, [chip_animal]);
@@ -142,94 +142,126 @@ router.get("/animal/:chip_animal", async (req, res) => {
   }
 });
 
-router.put("/update/:id", upload.single("foto"), async (req, res) => {
-  const chip_animal_original = req.params.id;
-  let {
-    chip_animal, // nuevo valor que quieres guardar
-    peso_nacimiento,
-    raza_id_raza,
-    fecha_nacimiento,
-    id_madre,
-    id_padre,
-    enfermedades,
-    observaciones,
+router.put("/update/:chip_animal", verificarToken, upload.single("foto"), async (req, res) => {
+  const chip_animal_original = req.params.chip_animal;
+  
+  // Extraer datos del body (para FormData) o de req.body (para JSON)
+  const {
+    chip_animal = req.body.chip_animal,
+    peso_nacimiento = req.body.peso_nacimiento,
+    raza_id_raza = req.body.raza_id_raza,
+    fecha_nacimiento = req.body.fecha_nacimiento,
+    id_madre = req.body.id_madre,
+    id_padre = req.body.id_padre,
+    enfermedades = req.body.enfermedades,
+    observaciones = req.body.observaciones
   } = req.body;
 
   try {
+    // Validar y formatear la fecha
+    const fechaFormateada = fecha_nacimiento ? fecha_nacimiento.split('T')[0] : null;
+
+    // Verificar si la raza existe
     const [razaResult] = await db.query(
       `SELECT id_raza FROM registro_ganadero.raza WHERE id_raza = ?`,
       [raza_id_raza]
     );
-   
 
     if (razaResult.length === 0) {
       console.warn('Raza no encontrada, asignando "Otra Raza" (id 25)');
       raza_id_raza = 25;
     }
 
-    const foto = req.file ? req.file.filename : null;
+    // Preparar la consulta SQL dinámicamente
+    let setClauses = [];
+    let values = [];
 
-    // Convertir id_madre y id_padre a null si no están presentes
-    id_madre = id_madre || null;
-    id_padre = id_padre || null;
-    enfermedades = enfermedades || null;
-    observaciones = observaciones || null;
+    // Campos obligatorios
+    setClauses.push("chip_animal = ?");
+    values.push(chip_animal);
 
-    let queryUpdate;
-    let values;
+    setClauses.push("peso_nacimiento = ?");
+    values.push(peso_nacimiento);
 
-    if (foto) {
-      // con foto
-queryUpdate = `
-UPDATE registro_ganadero.registro_animal 
-SET foto = ?, chip_animal = ?, peso_nacimiento = ?, raza_id_raza = ?, fecha_nacimiento = ?, id_madre = ?, id_padre = ?, enfermedades = ?, observaciones = ? 
-WHERE chip_animal = ?`;
+    setClauses.push("raza_id_raza = ?");
+    values.push(raza_id_raza);
 
-values = [
-foto,
-chip_animal,            // nuevo chip
-peso_nacimiento,
-raza_id_raza,
-fecha_nacimiento,
-id_madre,
-id_padre,
-enfermedades,
-observaciones,
-chip_animal_original,   // chip actual que se usa para buscar
-];
+    setClauses.push("fecha_nacimiento = ?");
+    values.push(fechaFormateada);
 
+    // Campos opcionales
+    if (id_madre) {
+      setClauses.push("id_madre = ?");
+      values.push(id_madre);
     } else {
-      queryUpdate = `
-        UPDATE registro_ganadero.registro_animal 
-        SET peso_nacimiento = ?, chip_animal = ?, raza_id_raza = ?, fecha_nacimiento = ?, id_madre = ?, id_padre = ?, enfermedades = ?, observaciones = ? 
-        WHERE chip_animal = ?`;
-      values = [
-        peso_nacimiento,
-        chip_animal,
-        raza_id_raza,
-        fecha_nacimiento,
-        id_madre,
-        id_padre,
-        enfermedades,
-        observaciones,
-        chip_animal,
-      ];
+      setClauses.push("id_madre = NULL");
     }
 
+    if (id_padre) {
+      setClauses.push("id_padre = ?");
+      values.push(id_padre);
+    } else {
+      setClauses.push("id_padre = NULL");
+    }
+
+    // Manejar enfermedades (puede ser string o array)
+    if (enfermedades) {
+      let enfermedadesFormateadas;
+      if (Array.isArray(enfermedades)) {
+        enfermedadesFormateadas = enfermedades.join(',');
+      } else if (typeof enfermedades === 'string') {
+        enfermedadesFormateadas = enfermedades;
+      } else {
+        enfermedadesFormateadas = null;
+      }
+      
+      setClauses.push("enfermedades = ?");
+      values.push(enfermedadesFormateadas);
+    } else {
+      setClauses.push("enfermedades = NULL");
+    }
+
+    if (observaciones) {
+      setClauses.push("observaciones = ?");
+      values.push(observaciones);
+    } else {
+      setClauses.push("observaciones = NULL");
+    }
+
+    // Manejar la foto si se subió una nueva
+    if (req.file) {
+      setClauses.push("foto = ?");
+      values.push(req.file.filename);
+    }
+
+    // Construir la consulta final
+    const queryUpdate = `
+      UPDATE registro_ganadero.registro_animal 
+      SET ${setClauses.join(", ")} 
+      WHERE chip_animal = ?`;
+    
+    values.push(chip_animal_original);
+
+    console.log("Consulta SQL:", queryUpdate);
+    console.log("Valores:", values);
+
     const [result] = await db.query(queryUpdate, values);
+    
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Registro no encontrado" });
     }
-    console.log("Resultado del UPDATE:", result);
-    res
-      .status(200)
-      .json({
-        message: "Registro actualizado con éxito",
-        raza_actualizada: raza_id_raza,
-      });
+
+    res.status(200).json({ 
+      message: "Registro actualizado con éxito",
+      changes: result.changedRows
+    });
   } catch (err) {
     console.error("Error en la base de datos:", err);
-    res.status(500).json({ error: "Error al actualizar el registro" });
+    res.status(500).json({ 
+      error: "Error al actualizar el registro",
+      details: err.message,
+      sql: err.sql 
+    });
   }
 });
 
