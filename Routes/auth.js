@@ -58,7 +58,7 @@ router.post("/login", async (req, res) => {
     const esCorrecta = await bcrypt.compare(contraseña, usuario.contraseña);
 
     if (!esCorrecta) {
-      return res.status(401).json({ mensaje: "Contraseña incorrecta" });
+      return res.status(401).json({ mensaje: "Contraseña errada" });
     }
 
     console.log("Usuario encontrado:", usuario);
