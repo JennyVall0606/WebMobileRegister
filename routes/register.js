@@ -274,7 +274,7 @@ router.put(
 );
 
 router.get("/razas", async (req, res) => {
-  const query = `SELECT * FROM registro_ganadero.raza`;
+  const query = `SELECT * FROM raza`;
 
   try {
     const [results] = await db.query(query);

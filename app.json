@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "05af1d79-d726-4fd3-a310-e34228b1b7b2"
+      }
+    },
+    "android": {
+      "package": "com.jaov669.webmobileregister"
+    }
+  }
+}
