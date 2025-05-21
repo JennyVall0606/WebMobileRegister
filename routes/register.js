@@ -25,6 +25,9 @@ const upload = multer({ storage: storage });
 
 router.post("/add", /* verificarToken, */ upload.single("foto"), async (req, res) => {
 console.log('POST /add recibido');
+ console.log("POST /register/add recibido");
+  console.log("Body:", req.body);
+  console.log("File:", req.file);
   const id_usuario = req.usuario?.id; // Verificar que el ID del usuario esté presente
   
   if (!id_usuario) {
