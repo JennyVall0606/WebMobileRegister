@@ -64,7 +64,7 @@ router.get('/historico-pesaje', async (req, res) => {
     try {
         const [rows] = await db.query(`
             SELECT id, fecha_pesaje, chip_animal, peso_kg
-            FROM registro_ganadero.vista_historico_pesaje
+            FROM vista_historico_pesaje
             ORDER BY fecha_pesaje DESC
         `);
         

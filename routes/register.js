@@ -62,7 +62,7 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
 
   try {
     const [razaResult] = await db.query(
-      `SELECT id_raza FROM registro_ganadero.raza WHERE id_raza = ?`,
+      `SELECT id_raza FROM raza WHERE id_raza = ?`,
       [raza_id_raza]
     );
 
@@ -72,7 +72,7 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
     }
 
     const queryInsert = `
-      INSERT INTO registro_ganadero.registro_animal 
+      INSERT INTO registro_animal 
       (foto, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones, id_usuario, created_at) 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
 
@@ -101,7 +101,7 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
 
 router.delete("/delete/:chip_animal", async (req, res) => {
   const { chip_animal } = req.params;
-  const query = `DELETE FROM registro_ganadero.registro_animal WHERE chip_animal = ?`;
+  const query = `DELETE FROM registro_animal WHERE chip_animal = ?`;
 
   try {
     const [result] = await db.query(query, [chip_animal]);
@@ -116,7 +116,7 @@ router.delete("/delete/:chip_animal", async (req, res) => {
 });
 
 router.get("/all", async (req, res) => {
-  const query = `SELECT * FROM registro_ganadero.vista_registro_animal`;
+  const query = `SELECT * FROM vista_registro_animal`;
 
   try {
     const [results] = await db.query(query);
@@ -129,7 +129,7 @@ router.get("/all", async (req, res) => {
 
 router.get("/animal/:chip_animal", async (req, res) => {
   const { chip_animal } = req.params;
-  const query = `SELECT * FROM registro_ganadero.vista_registro_animal WHERE chip_animal = ?`;
+  const query = `SELECT * FROM vista_registro_animal WHERE chip_animal = ?`;
 
   try {
     const [results] = await db.query(query, [chip_animal]);
@@ -170,7 +170,7 @@ router.put(
 
       // Verificar si la raza existe
       const [razaResult] = await db.query(
-        `SELECT id_raza FROM registro_ganadero.raza WHERE id_raza = ?`,
+        `SELECT id_raza FROM raza WHERE id_raza = ?`,
         [raza_id_raza]
       );
 
@@ -243,7 +243,7 @@ router.put(
 
       // Construir la consulta final
       const queryUpdate = `
-      UPDATE registro_ganadero.registro_animal 
+      UPDATE registro_animal 
       SET ${setClauses.join(", ")} 
       WHERE chip_animal = ?`;
 

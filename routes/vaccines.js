@@ -133,7 +133,7 @@ router.get("/historico-vacunas", async (req, res) => {
   try {
     const [rows] = await db.query(`
         SELECT id, chip_animal, fecha_vacuna, tipo_vacuna, nombre, dosis_administrada, observaciones
-        FROM registro_ganadero.vista_historico_vacuna
+        FROM vista_historico_vacuna
         ORDER BY fecha_vacuna DESC
       `);
 
