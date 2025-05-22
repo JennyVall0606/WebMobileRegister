@@ -272,7 +272,7 @@ router.put("/:id", async (req, res) => {
 });
 
 router.put("/chip/:id", async (req, res) => {
-  const { chip_animal } = req.params;
+  const { id } = req.params;
 
   const {
     fecha_vacuna,
