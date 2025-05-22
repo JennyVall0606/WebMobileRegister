@@ -295,7 +295,7 @@ router.put("/chip/:id", async (req, res) => {
       nombre_vacunas_id_vacuna,
       dosis_administrada,
       observaciones,
-      chip_animal,
+      id,  // <- aquí estaba el error, usar 'id' en vez de 'chip_animal'
     ]);
 
     if (result.affectedRows === 0) {
@@ -310,6 +310,7 @@ router.put("/chip/:id", async (req, res) => {
     res.status(500).json({ error: "Error al actualizar la vacuna" });
   }
 });
+
 
 router.get("/tipos-vacuna", async (req, res) => {
   try {
