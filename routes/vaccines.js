@@ -271,7 +271,7 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-router.put("/chip/:chip_animal", async (req, res) => {
+router.put("/chip/:id", async (req, res) => {
   const { chip_animal } = req.params;
 
   const {
@@ -287,7 +287,7 @@ router.put("/chip/:chip_animal", async (req, res) => {
             UPDATE historico_vacuna 
             SET fecha_vacuna = ?, tipo_vacunas_id_tipo_vacuna = ?, 
                 nombre_vacunas_id_vacuna = ?, dosis_administrada = ?, observaciones = ? 
-            WHERE id_historico = ?`;
+            WHERE id = ?`;
 
     const [result] = await db.query(updateQuery, [
       fecha_vacuna,
