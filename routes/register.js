@@ -23,6 +23,8 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
+
+
 router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
   
   const id_usuario = req.usuario?.id; // Verificar que el ID del usuario esté presente
@@ -62,6 +64,16 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
   observaciones = observaciones || null;
 
   try {
+
+const [existingChip] = await db.query(
+      `SELECT * FROM registro_animal WHERE chip_animal = ?`,
+      [chip_animal]
+    );
+
+    if (existingChip.length > 0) {
+      return res.status(400).json({ error: "El chip ya está registrado" });
+    }
+
     const [razaResult] = await db.query(
       `SELECT id_raza FROM raza WHERE id_raza = ?`,
       [raza_id_raza]

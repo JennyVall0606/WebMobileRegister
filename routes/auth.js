@@ -44,6 +44,48 @@ const verificarToken = (req, res, next) => {
   }
 };
 
+
+router.post("/registroUser", async (req, res) => {
+  const { correo, contraseña, rol } = req.body;
+
+  // Validar que los campos requeridos estén presentes
+  if (!correo || !contraseña || !rol) {
+    return res.status(400).json({ mensaje: "Todos los campos son obligatorios" });
+  }
+
+  try {
+    // Verificar si el correo ya existe en la base de datos
+    const usuarioExistente = await Usuario.buscarPorCorreo(correo);
+    if (usuarioExistente) {
+      return res.status(409).json({ mensaje: "El correo ya está registrado" });
+    }
+
+    // Cifrar la contraseña antes de guardarla
+    const contraseñaCifrada = await bcrypt.hash(contraseña, 10);
+
+    // Crear el nuevo usuario en la base de datos
+    const nuevoUsuario = await Usuario.crear({
+      correo,
+      contraseña: contraseñaCifrada,
+      rol,
+    });
+
+    // Si se crea el usuario con éxito, responder con un mensaje
+    return res.status(201).json({
+      mensaje: "Usuario creado con éxito",
+      usuario: {
+        correo: nuevoUsuario.correo,
+        rol: nuevoUsuario.rol,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ mensaje: "Error del servidor al crear el usuario" });
+  }
+});
+
+
+
 // ✅ Ruta de login
 router.post("/login", async (req, res) => {
   const { correo, contraseña } = req.body;
