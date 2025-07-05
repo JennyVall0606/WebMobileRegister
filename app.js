@@ -40,5 +40,5 @@ app.get('/test-db', (req, res) => {
 
 const PORT = 3000;
 app.listen(3000, '0.0.0.0', () => {
-  console.log('Servidor escuchando en http://192.168.1.11:3000');
+  console.log('Servidor escuchando en http://http://0.0.0.0:${PORT}');
 });
