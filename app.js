@@ -40,5 +40,5 @@ app.get('/test-db', (req, res) => {
 
 const PORT = 3000;
 app.listen(3000, '0.0.0.0', () => {
-  console.log('Servidor escuchando en http://shortline.proxy.rlwy.net:51747');
+  console.log('Servidor escuchando en https://webmobileregister-production.up.railway.app');
 });
