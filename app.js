@@ -3,6 +3,9 @@ const express = require('express');
 const db = require('./db');
 const cors = require('cors');
 const path = require('path');
+const redis = require('redis');  // Asegúrate de que esta línea esté presente al principio de tu archivo
+
+
 
 
 const app = express();
