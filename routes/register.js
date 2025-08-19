@@ -42,6 +42,10 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
     id_padre,
     enfermedades,
     observaciones,
+     procedencia,  // Asegúrate de que 'procedencia' esté aquí
+  hierro,       // Asegúrate de que 'hierro' esté aquí
+  categoria,    // Asegúrate de que 'categoria' esté aquí
+  ubicacion   
   } = req.body;
 
   if (!req.file) {
@@ -62,6 +66,10 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
   id_padre = id_padre || null;
   enfermedades = enfermedades || null;
   observaciones = observaciones || null;
+procedencia = procedencia || null;  // Asignar null si no se proporciona valor
+hierro = hierro || null;
+categoria = categoria || null;
+ubicacion = ubicacion || null;
 
   try {
 
