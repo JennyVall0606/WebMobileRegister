@@ -248,17 +248,17 @@ if (categoria) {
 }
     
 if (parto) {
-  setClauses.push("numero_parto = NULL");
+  setClauses.push("numero_parto = ?");
   values.push(parto);
 }
 
 if (precocidad) {
-  setClauses.push("precocidad = NULL");
+  setClauses.push("precocidad = ?");
   values.push(precocidad);
 }
 
 if (tipoMonta) {
-  setClauses.push("tipo_monta = NULL");
+  setClauses.push("tipo_monta = ?");
   values.push(tipoMonta);
 }
 
