@@ -23,10 +23,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-
-
 router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
-  
   const id_usuario = req.usuario?.id; // Verificar que el ID del usuario esté presente
 
   if (!id_usuario) {
@@ -42,10 +39,13 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
     id_padre,
     enfermedades,
     observaciones,
-     procedencia,  // Asegúrate de que 'procedencia' esté aquí
-  hierro,       // Asegúrate de que 'hierro' esté aquí
-  categoria,    // Asegúrate de que 'categoria' esté aquí
-  ubicacion   
+    procedencia,
+    hierro,
+    categoria,
+    ubicacion,
+    numero_parto, // Añadir el nuevo campo
+    precocidad, // Añadir el nuevo campo
+    tipo_monta,
   } = req.body;
 
   if (!req.file) {
@@ -66,14 +66,13 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
   id_padre = id_padre || null;
   enfermedades = enfermedades || null;
   observaciones = observaciones || null;
-procedencia = procedencia || null;  // Asignar null si no se proporciona valor
-hierro = hierro || null;
-categoria = categoria || null;
-ubicacion = ubicacion || null;
+  procedencia = procedencia || null;
+  hierro = hierro || null;
+  categoria = categoria || null;
+  ubicacion = ubicacion || null;
 
   try {
-
-const [existingChip] = await db.query(
+    const [existingChip] = await db.query(
       `SELECT * FROM registro_animal WHERE chip_animal = ?`,
       [chip_animal]
     );
@@ -92,9 +91,9 @@ const [existingChip] = await db.query(
       raza_id_raza = 25;
     }
 
-const queryInsert = `
+    const queryInsert = `
   INSERT INTO registro_animal 
-  (foto, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones, id_usuario, procedencia, hierro, categoria, ubicacion, created_at) 
+  (foto, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones, id_usuario, procedencia, hierro, categoria, ubicacion, numero_parto, precocidad, tipo_monta, created_at) 
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
 
     const values = [
@@ -108,10 +107,13 @@ const queryInsert = `
       enfermedades,
       observaciones,
       id_usuario,
-       procedencia, 
-  hierro,      
-  categoria,  
-  ubicacion, 
+      procedencia,
+      hierro,
+      categoria,
+      ubicacion,
+      numero_parto,
+      precocidad,
+      tipo_monta,
     ];
 
     const [result] = await db.query(queryInsert, values);
@@ -235,6 +237,27 @@ router.put(
       } else {
         setClauses.push("id_padre = NULL");
       }
+
+ setClauses.push("procedencia = ?");
+      values.push(procedencia);
+
+      setClauses.push("hierro = ?");
+      values.push(hierro);
+
+      setClauses.push("categoria = ?");
+      values.push(categoria);
+
+         setClauses.push(" ubicacion = ?");
+      values.push(ubicacion);
+
+      setClauses.push("numero_parto = ?");
+      values.push(numero_parto);
+
+      setClauses.push("precocidad = ?");
+      values.push(precocidad);
+
+      setClauses.push("tipo_monta = ?");
+      values.push(tipo_monta);
 
       // Manejar enfermedades (puede ser string o array)
       if (enfermedades) {
