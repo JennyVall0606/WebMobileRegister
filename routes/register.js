@@ -112,7 +112,7 @@ const queryInsert = `
   hierro,      
   categoria,  
   ubicacion, 
-   parto,       
+numero_parto,     
   precocidad,  
   tipoMonta, 
     ];
