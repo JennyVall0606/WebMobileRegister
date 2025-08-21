@@ -45,10 +45,7 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
      procedencia,  // Asegúrate de que 'procedencia' esté aquí
   hierro,       // Asegúrate de que 'hierro' esté aquí
   categoria,    // Asegúrate de que 'categoria' esté aquí
-  ubicacion, 
-   numero_parto,  // Asegúrate de que 'numero_parto' esté aquí
-  precocidad,    // Asegúrate de que 'precocidad' esté aquí
-  tipo_monta    
+  ubicacion   
   } = req.body;
 
   if (!req.file) {
@@ -69,13 +66,10 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
   id_padre = id_padre || null;
   enfermedades = enfermedades || null;
   observaciones = observaciones || null;
-procedencia = procedencia || null; 
+procedencia = procedencia || null;  // Asignar null si no se proporciona valor
 hierro = hierro || null;
 categoria = categoria || null;
 ubicacion = ubicacion || null;
-numero_parto = numero_parto || null;  
-precocidad = precocidad || null;  
-tipo_monta = tipo_monta || null;  
 
   try {
 
@@ -118,8 +112,8 @@ const queryInsert = `
   hierro,      
   categoria,  
   ubicacion, 
-   numero_parto,   
-  precocidad, 
+   parto,       
+  precocidad,  
   tipoMonta, 
     ];
 
@@ -237,42 +231,6 @@ router.put(
       } else {
         setClauses.push("id_madre = NULL");
       }
-
-      if (procedencia) {
-  setClauses.push("procedencia = NULL");
-  values.push(procedencia);
-}
-
-if (hierro) {
-  setClauses.push("hierro = ?");
-  values.push(hierro);
-}
-
-if (categoria) {
-  setClauses.push("categoria = ?");
-  values.push(categoria);
-}
-    
-if (parto) {
-  setClauses.push("numero_parto = ?");
-  values.push(parto);  // Asignar el valor real de parto
-} else {
-  setClauses.push("numero_parto = NULL");
-}
-
-if (precocidad) {
-  setClauses.push("precocidad = ?");
-  values.push(precocidad);  // Asignar el valor real de precocidad
-} else {
-  setClauses.push("precocidad = NULL");
-}
-
-if (tipoMonta) {
-  setClauses.push("tipo_monta = ?");
-  values.push(tipoMonta);  // Asignar el valor real de tipo_monta
-} else {
-  setClauses.push("tipo_monta = NULL");
-}
 
       if (id_padre) {
         setClauses.push("id_padre = ?");
