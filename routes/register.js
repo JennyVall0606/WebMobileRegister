@@ -94,7 +94,7 @@ const [existingChip] = await db.query(
 
 const queryInsert = `
   INSERT INTO registro_animal 
-  (foto, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones, id_usuario, procedencia, hierro, categoria, ubicacion,numero_parto, precocidad, tipo_monta, created_at) 
+  (foto, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones, id_usuario, procedencia, hierro, categoria, ubicacion, created_at) 
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
 
     const values = [
@@ -112,9 +112,6 @@ const queryInsert = `
   hierro,      
   categoria,  
   ubicacion, 
-numero_parto,     
-  precocidad,  
-  tipoMonta, 
     ];
 
     const [result] = await db.query(queryInsert, values);
