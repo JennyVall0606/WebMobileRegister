@@ -257,20 +257,21 @@ router.put(
          setClauses.push(" ubicacion = ?");
       values.push(ubicacion);
 
-       if (categoria === "cría") { // Si es cría, se mantienen los campos
-        setClauses.push("numero_parto = ?");
-        values.push(numero_parto);
+      if (categoria === "cría") { // Si es cría, se mantienen los campos
+  setClauses.push("numero_parto = ?");
+  values.push(numero_parto || null); // Si no se ingresa un valor, se asegura que sea NULL
 
-        setClauses.push("precocidad = ?");
-        values.push(precocidad);
+  setClauses.push("precocidad = ?");
+  values.push(precocidad || null); // Lo mismo para precocidad
 
-        setClauses.push("tipo_monta = ?");
-        values.push(tipo_monta);
-      } else { // Si no es cría, eliminamos los campos
-        setClauses.push("numero_parto = NULL");
-        setClauses.push("precocidad = NULL");
-        setClauses.push("tipo_monta = NULL");
-      }
+  setClauses.push("tipo_monta = ?");
+  values.push(tipo_monta || null); // Lo mismo para tipo_monta
+} else { // Si no es cría, eliminamos los campos
+  setClauses.push("numero_parto = NULL");
+  setClauses.push("precocidad = NULL");
+  setClauses.push("tipo_monta = NULL");
+}
+
 
       // Manejar enfermedades (puede ser string o array)
       if (enfermedades) {
