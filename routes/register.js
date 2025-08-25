@@ -187,6 +187,13 @@ router.put(
       id_padre = req.body.id_padre,
       enfermedades = req.body.enfermedades,
       observaciones = req.body.observaciones,
+        categoria = req.body.categoria, // Añadir categoría
+      procedencia = req.body.procedencia,
+      hierro = req.body.hierro,
+      ubicacion = req.body.ubicacion,
+      numero_parto = req.body.numero_parto,
+      precocidad = req.body.precocidad,
+      tipo_monta = req.body.tipo_monta,
     } = req.body;
 
     try {
@@ -250,14 +257,20 @@ router.put(
          setClauses.push(" ubicacion = ?");
       values.push(ubicacion);
 
-      setClauses.push("numero_parto = ?");
-      values.push(numero_parto);
+       if (categoria === "cría") { // Si es cría, se mantienen los campos
+        setClauses.push("numero_parto = ?");
+        values.push(numero_parto);
 
-      setClauses.push("precocidad = ?");
-      values.push(precocidad);
+        setClauses.push("precocidad = ?");
+        values.push(precocidad);
 
-      setClauses.push("tipo_monta = ?");
-      values.push(tipo_monta);
+        setClauses.push("tipo_monta = ?");
+        values.push(tipo_monta);
+      } else { // Si no es cría, eliminamos los campos
+        setClauses.push("numero_parto = NULL");
+        setClauses.push("precocidad = NULL");
+        setClauses.push("tipo_monta = NULL");
+      }
 
       // Manejar enfermedades (puede ser string o array)
       if (enfermedades) {
