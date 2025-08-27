@@ -3,9 +3,9 @@ const router = express.Router();
 const db = require('../db'); 
 
 router.post('/add', async (req, res) => {
-    const { chip_animal, fecha_pesaje, peso_kg } = req.body;
+    const { chip_animal, fecha_pesaje, peso_kg,  costo_compra, costo_venta } = req.body;
 
-    if (!chip_animal || !fecha_pesaje || !peso_kg) {
+   if (!chip_animal || !fecha_pesaje || !peso_kg) {
         return res.status(400).json({ error: "Todos los campos son obligatorios" });
     }
 
@@ -18,9 +18,9 @@ router.post('/add', async (req, res) => {
 
         const registro_animal_id = checkResult[0].id;
 
-        const [insertResult] = await db.query(
-            `INSERT INTO historico_pesaje (registro_animal_id, chip_animal, fecha_pesaje, peso_kg) VALUES (?, ?, ?, ?)`,
-            [registro_animal_id, chip_animal, fecha_pesaje, peso_kg]
+       const [insertResult] = await db.query(
+            `INSERT INTO historico_pesaje (registro_animal_id, chip_animal, fecha_pesaje, peso_kg, costo_compra, costo_venta) VALUES (?, ?, ?, ?, ?, ?)`,
+            [registro_animal_id, chip_animal, fecha_pesaje, peso_kg, costo_compra || null, costo_venta || null]
         );
 
         res.status(201).json({ message: "Pesaje agregado correctamente", id: insertResult.insertId });
@@ -30,6 +30,8 @@ router.post('/add', async (req, res) => {
         res.status(500).json({ error: "Error al agregar el pesaje" });
     }
 });
+
+
 
 router.delete('/delete/:chip_animal', async (req, res) => {
     const { chip_animal } = req.params;
@@ -93,7 +95,8 @@ router.get('/:chip_animal', async (req, res) => {
     const { chip_animal } = req.params;
 
     try {
-        const [results] = await db.query(`SELECT * FROM vista_historico_pesaje WHERE chip_animal = ?`, [chip_animal]);
+        const [results] = await db.query(`  SELECT id, fecha_pesaje, chip_animal, peso_kg, costo_compra, costo_venta
+            FROM historico_pesaje WHERE chip_animal = ?`, [chip_animal]);
 
         if (results.length === 0) {
             return res.status(404).json({ error: "No se encontró un pesaje para este chip_animal" });
@@ -111,9 +114,9 @@ router.get('/:chip_animal', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
     const { id } = req.params;  // Obtenemos el 'id' desde los parámetros de la ruta
-    const { fecha_pesaje, peso_kg } = req.body;
+    const { fecha_pesaje, peso_kg, costo_compra, costo_venta } = req.body;
 
-    if (!fecha_pesaje || !peso_kg) {
+      if (!fecha_pesaje || !peso_kg ) {
         return res.status(400).json({ error: "Todos los campos son obligatorios" });
     }
 
@@ -128,9 +131,15 @@ router.put('/:id', async (req, res) => {
         }
 
         // Si existe, proceder con la actualización
-        const [updateResult] = await db.query(
-            `UPDATE historico_pesaje SET fecha_pesaje = ?, peso_kg = ? WHERE id = ?`,
-            [fecha_pesaje, peso_kg, id]
+          const [updateResult] = await db.query(
+            `UPDATE historico_pesaje SET fecha_pesaje = ?, peso_kg = ?, costo_compra = ?, costo_venta = ? WHERE id = ?`,
+            [
+                fecha_pesaje, 
+                peso_kg, 
+                costo_compra || null, // Si no se pasa, se actualiza con NULL
+                costo_venta || null,   // Si no se pasa, se actualiza con NULL
+                id
+            ]
         );
 
         if (updateResult.affectedRows === 0) {

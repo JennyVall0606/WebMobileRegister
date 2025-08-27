@@ -177,10 +177,6 @@ router.put(
   async (req, res) => {
     const chip_animal_original = req.params.chip_animal;
 
-    console.log("=== INICIO DE ACTUALIZACIÓN ===");
-    console.log("Chip original:", chip_animal_original);
-    console.log("Body completo:", req.body);
-    console.log("Archivo subido:", req.file ? req.file.filename : "No hay archivo");
 
 
     // Extraer datos del body (para FormData) o de req.body (para JSON)
@@ -202,13 +198,7 @@ router.put(
       tipo_monta = req.body.tipo_monta,
     } = req.body;
 
-console.log("=== DATOS EXTRAÍDOS ===");
-    console.log("chip_animal:", chip_animal);
-    console.log("categoria:", categoria, "- Tipo:", typeof categoria);
-    console.log("numero_parto:", numero_parto, "- Tipo:", typeof numero_parto);
-    console.log("precocidad:", precocidad, "- Tipo:", typeof precocidad);
-    console.log("tipo_monta:", tipo_monta, "- Tipo:", typeof tipo_monta);
-    console.log("¿Es cria?:", categoria === "cria");
+
 
     try {
 
@@ -224,11 +214,6 @@ console.log("=== DATOS EXTRAÍDOS ===");
         return res.status(404).json({ error: "Registro no encontrado" });
       }
 
-      console.log("=== REGISTRO ACTUAL EN TABLA BASE ===");
-      console.log("categoria actual:", existingRecord[0].categoria);
-      console.log("numero_parto actual:", existingRecord[0].numero_parto);
-      console.log("precocidad actual:", existingRecord[0].precocidad);
-      console.log("tipo_monta actual:", existingRecord[0].tipo_monta);
 
 
 
@@ -292,10 +277,6 @@ console.log("=== DATOS EXTRAÍDOS ===");
          setClauses.push(" ubicacion = ?");
       values.push(ubicacion);
 
-console.log("=== PROCESANDO CAMPOS DE CRIA ===");
-console.log("Evaluando condición: categoria === 'cria'");
-console.log("categoria:", `'${categoria}'`);
-console.log("Resultado:", categoria === "cria");
 
 // Normalizar categoría para evitar problemas de acentos
 const categoriaNormalizada = categoria
@@ -312,18 +293,14 @@ if (categoriaNormalizada === "cria") {
   setClauses.push("tipo_monta = ?");
   values.push(tipo_monta || null);
 
-  console.log("Se guardarán datos de cría:", {
-    numero_parto,
-    precocidad,
-    tipo_monta,
-  });
+
 } else {
   // Si NO es cria → forzamos a NULL en la BD
   setClauses.push("numero_parto = NULL");
   setClauses.push("precocidad = NULL");
   setClauses.push("tipo_monta = NULL");
 
-  console.log("Categoría diferente a cría → se borran campos de cría");
+ 
 }
 
       // Manejar enfermedades (puede ser string o array)
