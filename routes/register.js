@@ -257,7 +257,7 @@ router.put(
          setClauses.push(" ubicacion = ?");
       values.push(ubicacion);
 
-      if (categoria === "cría") { // Si es cría, se mantienen los campos
+      if (categoria === "cria") { 
   setClauses.push("numero_parto = ?");
   values.push(numero_parto || null); // Si no se ingresa un valor, se asegura que sea NULL
 
@@ -266,7 +266,7 @@ router.put(
 
   setClauses.push("tipo_monta = ?");
   values.push(tipo_monta || null); // Lo mismo para tipo_monta
-} else { // Si no es cría, eliminamos los campos
+} else { 
   setClauses.push("numero_parto = NULL");
   setClauses.push("precocidad = NULL");
   setClauses.push("tipo_monta = NULL");
