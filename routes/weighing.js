@@ -65,7 +65,7 @@ router.get('/all', async (req, res) => {
 router.get('/historico-pesaje', async (req, res) => {
     try {
         const [rows] = await db.query(`
-            SELECT id, fecha_pesaje, chip_animal, peso_kg
+            SELECT id, fecha_pesaje, chip_animal, peso_kg, costo_compra, costo_venta
             FROM vista_historico_pesaje
             ORDER BY fecha_pesaje DESC
         `);
@@ -80,7 +80,9 @@ router.get('/historico-pesaje', async (req, res) => {
         id: row.id,
         fecha: row.fecha_pesaje,  // Lo mapeamos como 'fecha' en la respuesta
         chip: row.chip_animal,    // Lo mapeamos como 'chip' en la respuesta
-        peso: row.peso_kg         // Lo mapeamos como 'peso' en la respuesta
+        peso: row.peso_kg,       // Lo mapeamos como 'peso' en la respuesta
+        costo_compra: row.costo_compra,  // Añadido costo_compra
+        costo_venta: row.costo_venta     // Añadido costo_venta
       }));
   
       res.json(response);  // Devolver la respuesta en formato JSON
