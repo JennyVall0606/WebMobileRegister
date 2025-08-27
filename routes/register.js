@@ -177,6 +177,12 @@ router.put(
   async (req, res) => {
     const chip_animal_original = req.params.chip_animal;
 
+    console.log("=== INICIO DE ACTUALIZACIÓN ===");
+    console.log("Chip original:", chip_animal_original);
+    console.log("Body completo:", req.body);
+    console.log("Archivo subido:", req.file ? req.file.filename : "No hay archivo");
+
+
     // Extraer datos del body (para FormData) o de req.body (para JSON)
     const {
       chip_animal = req.body.chip_animal,
@@ -196,7 +202,36 @@ router.put(
       tipo_monta = req.body.tipo_monta,
     } = req.body;
 
+console.log("=== DATOS EXTRAÍDOS ===");
+    console.log("chip_animal:", chip_animal);
+    console.log("categoria:", categoria, "- Tipo:", typeof categoria);
+    console.log("numero_parto:", numero_parto, "- Tipo:", typeof numero_parto);
+    console.log("precocidad:", precocidad, "- Tipo:", typeof precocidad);
+    console.log("tipo_monta:", tipo_monta, "- Tipo:", typeof tipo_monta);
+    console.log("¿Es cria?:", categoria === "cria");
+
     try {
+
+
+ // Verificar que el registro existe en la tabla base
+      const [existingRecord] = await db.query(
+        `SELECT * FROM registro_animal WHERE chip_animal = ?`,
+        [chip_animal_original]
+      );
+
+      if (existingRecord.length === 0) {
+        console.log("ERROR: Registro no encontrado en tabla base");
+        return res.status(404).json({ error: "Registro no encontrado" });
+      }
+
+      console.log("=== REGISTRO ACTUAL EN TABLA BASE ===");
+      console.log("categoria actual:", existingRecord[0].categoria);
+      console.log("numero_parto actual:", existingRecord[0].numero_parto);
+      console.log("precocidad actual:", existingRecord[0].precocidad);
+      console.log("tipo_monta actual:", existingRecord[0].tipo_monta);
+
+
+
       // Validar y formatear la fecha
       const fechaFormateada = fecha_nacimiento
         ? fecha_nacimiento.split("T")[0]
@@ -257,7 +292,24 @@ router.put(
          setClauses.push(" ubicacion = ?");
       values.push(ubicacion);
 
+  console.log("=== PROCESANDO CAMPOS DE CRIA ===");
+      console.log("Evaluando condición: categoria === 'cria'");
+      console.log("categoria:", `'${categoria}'`);
+      console.log("Resultado:", categoria === "cria");
+
+
       if (categoria === "cria") { 
+
+        const partoValue = numero_parto || null;
+        const precocidadValue = precocidad || null;
+        const tipoMontaValue = tipo_monta || null;
+        
+        console.log("- numero_parto:", partoValue);
+        console.log("- precocidad:", precocidadValue);
+        console.log("- tipo_monta:", tipoMontaValue);
+
+          console.log("✓ ES CRIA - Guardando valores:");
+
   setClauses.push("numero_parto = ?");
   values.push(numero_parto || null); // Si no se ingresa un valor, se asegura que sea NULL
 
@@ -267,6 +319,10 @@ router.put(
   setClauses.push("tipo_monta = ?");
   values.push(tipo_monta || null); // Lo mismo para tipo_monta
 } else { 
+
+   console.log("✗ NO ES CRIA - Estableciendo campos como NULL");
+        console.log("Categoria recibida:", `'${categoria}'`);
+
   setClauses.push("numero_parto = NULL");
   setClauses.push("precocidad = NULL");
   setClauses.push("tipo_monta = NULL");
