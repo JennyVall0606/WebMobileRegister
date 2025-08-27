@@ -292,42 +292,39 @@ console.log("=== DATOS EXTRAÍDOS ===");
          setClauses.push(" ubicacion = ?");
       values.push(ubicacion);
 
-  console.log("=== PROCESANDO CAMPOS DE CRIA ===");
-      console.log("Evaluando condición: categoria === 'cria'");
-      console.log("categoria:", `'${categoria}'`);
-      console.log("Resultado:", categoria === "cria");
+console.log("=== PROCESANDO CAMPOS DE CRIA ===");
+console.log("Evaluando condición: categoria === 'cria'");
+console.log("categoria:", `'${categoria}'`);
+console.log("Resultado:", categoria === "cria");
 
+// Normalizar categoría para evitar problemas de acentos
+const categoriaNormalizada = categoria
+  ? categoria.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  : null;
 
-      if (categoria === "cria") { 
-
-        const partoValue = numero_parto || null;
-        const precocidadValue = precocidad || null;
-        const tipoMontaValue = tipo_monta || null;
-        
-        console.log("- numero_parto:", partoValue);
-        console.log("- precocidad:", precocidadValue);
-        console.log("- tipo_monta:", tipoMontaValue);
-
-          console.log("✓ ES CRIA - Guardando valores:");
-
+if (categoriaNormalizada === "cria") {
   setClauses.push("numero_parto = ?");
-  values.push(numero_parto || null); // Si no se ingresa un valor, se asegura que sea NULL
+  values.push(numero_parto || null);
 
   setClauses.push("precocidad = ?");
-  values.push(precocidad || null); // Lo mismo para precocidad
+  values.push(precocidad || null);
 
   setClauses.push("tipo_monta = ?");
-  values.push(tipo_monta || null); // Lo mismo para tipo_monta
-} else { 
+  values.push(tipo_monta || null);
 
-   console.log("✗ NO ES CRIA - Estableciendo campos como NULL");
-        console.log("Categoria recibida:", `'${categoria}'`);
-
+  console.log("Se guardarán datos de cría:", {
+    numero_parto,
+    precocidad,
+    tipo_monta,
+  });
+} else {
+  // Si NO es cria → forzamos a NULL en la BD
   setClauses.push("numero_parto = NULL");
   setClauses.push("precocidad = NULL");
   setClauses.push("tipo_monta = NULL");
-}
 
+  console.log("Categoría diferente a cría → se borran campos de cría");
+}
 
       // Manejar enfermedades (puede ser string o array)
       if (enfermedades) {
