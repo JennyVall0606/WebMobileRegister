@@ -138,8 +138,8 @@ router.put('/:id', async (req, res) => {
             [
                 fecha_pesaje, 
                 peso_kg, 
-                costo_compra || null, // Si no se pasa, se actualiza con NULL
-                costo_venta || null,   // Si no se pasa, se actualiza con NULL
+                costo_compra,
+                costo_venta,
                 id
             ]
         );
