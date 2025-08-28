@@ -117,7 +117,7 @@ router.get('/:chip_animal', async (req, res) => {
 
 
 router.put('/:id', async (req, res) => {
-    const { id } = req.params;  // Obtenemos el 'id' desde los parámetros de la ruta
+    const { id } = req.params;  
     const { fecha_pesaje, peso_kg, costo_compra, costo_venta, precio_kg_compra, precio_kg_venta } = req.body;
 
       if (!fecha_pesaje || !peso_kg ) {
@@ -145,6 +145,7 @@ router.put('/:id', async (req, res) => {
                 costo_venta || null,
                 precio_kg_compra || null,
                 precio_kg_venta || null,
+                id
             ]
         );
 
