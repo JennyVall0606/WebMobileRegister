@@ -138,13 +138,13 @@ router.put('/:id', async (req, res) => {
           const [updateResult] = await db.query(
             `UPDATE historico_pesaje SET fecha_pesaje = ?, peso_kg = ?, costo_compra = ?, costo_venta = ?, precio_kg_compra = ?, precio_kg_venta = ? WHERE id = ?`,
             [
+                 chip_animal ,
                 fecha_pesaje, 
                 peso_kg, 
                 costo_compra || null,
                 costo_venta || null,
                 precio_kg_compra || null,
                 precio_kg_venta || null,
-                id
             ]
         );
 
