@@ -177,8 +177,6 @@ router.put(
   async (req, res) => {
     const chip_animal_original = req.params.chip_animal;
 
-
-
     // Extraer datos del body (para FormData) o de req.body (para JSON)
     const {
       chip_animal = req.body.chip_animal,
@@ -189,7 +187,7 @@ router.put(
       id_padre = req.body.id_padre,
       enfermedades = req.body.enfermedades,
       observaciones = req.body.observaciones,
-        categoria = req.body.categoria, // Añadir categoría
+      categoria = req.body.categoria, // Añadir categoría
       procedencia = req.body.procedencia,
       hierro = req.body.hierro,
       ubicacion = req.body.ubicacion,
@@ -198,12 +196,8 @@ router.put(
       tipo_monta = req.body.tipo_monta,
     } = req.body;
 
-
-
     try {
-
-
- // Verificar que el registro existe en la tabla base
+      // Verificar que el registro existe en la tabla base
       const [existingRecord] = await db.query(
         `SELECT * FROM registro_animal WHERE chip_animal = ?`,
         [chip_animal_original]
@@ -213,9 +207,6 @@ router.put(
         console.log("ERROR: Registro no encontrado en tabla base");
         return res.status(404).json({ error: "Registro no encontrado" });
       }
-
-
-
 
       // Validar y formatear la fecha
       const fechaFormateada = fecha_nacimiento
@@ -265,7 +256,7 @@ router.put(
         setClauses.push("id_padre = NULL");
       }
 
- setClauses.push("procedencia = ?");
+      setClauses.push("procedencia = ?");
       values.push(procedencia);
 
       setClauses.push("hierro = ?");
@@ -274,34 +265,32 @@ router.put(
       setClauses.push("categoria = ?");
       values.push(categoria);
 
-         setClauses.push(" ubicacion = ?");
+      setClauses.push(" ubicacion = ?");
       values.push(ubicacion);
 
+      // Normalizar categoría para evitar problemas de acentos
+      const categoriaNormalizada = categoria
+        ? categoria
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase()
+        : null;
 
-// Normalizar categoría para evitar problemas de acentos
-const categoriaNormalizada = categoria
-  ? categoria.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
-  : null;
+      if (categoriaNormalizada === "cria") {
+        setClauses.push("numero_parto = ?");
+        values.push(numero_parto || null);
 
-if (categoriaNormalizada === "cria") {
-  setClauses.push("numero_parto = ?");
-  values.push(numero_parto || null);
+        setClauses.push("precocidad = ?");
+        values.push(precocidad || null);
 
-  setClauses.push("precocidad = ?");
-  values.push(precocidad || null);
-
-  setClauses.push("tipo_monta = ?");
-  values.push(tipo_monta || null);
-
-
-} else {
-  // Si NO es cria → forzamos a NULL en la BD
-  setClauses.push("numero_parto = NULL");
-  setClauses.push("precocidad = NULL");
-  setClauses.push("tipo_monta = NULL");
-
- 
-}
+        setClauses.push("tipo_monta = ?");
+        values.push(tipo_monta || null);
+      } else {
+        // Si NO es cria → forzamos a NULL en la BD
+        setClauses.push("numero_parto = NULL");
+        setClauses.push("precocidad = NULL");
+        setClauses.push("tipo_monta = NULL");
+      }
 
       // Manejar enfermedades (puede ser string o array)
       if (enfermedades) {
