@@ -5,6 +5,18 @@ const bcrypt = require("bcrypt");
 const Usuario = require("../models/user");
 const db = require("../db");
 
+const generarRefreshToken = (usuario) => {
+  return jwt.sign(
+    {
+      id: usuario.id || usuario.id_usuario,
+      correo: usuario.correo,
+      rol: usuario.rol,
+    },
+    process.env.JWT_SECRET || "clave_secreta",
+    { expiresIn: "30d" } // El refresh token puede durar más tiempo
+  );
+};
+
 
 // 🔐 Generar token
 const generarToken = (usuario) => {
@@ -86,7 +98,6 @@ router.post("/registroUser", async (req, res) => {
 
 
 
-// ✅ Ruta de login
 router.post("/login", async (req, res) => {
   const { correo, contraseña } = req.body;
 
@@ -105,13 +116,41 @@ router.post("/login", async (req, res) => {
 
     console.log("Usuario encontrado:", usuario);
 
-    const token = generarToken(usuario);
-    return res.json({ token });
+    const accessToken = generarToken(usuario);
+    const refreshToken = generarRefreshToken(usuario);
+
+    return res.json({ accessToken, refreshToken });
   } catch (error) {
     console.error(error);
     res.status(500).json({ mensaje: "Error del servidor" });
   }
 });
+
+// ✅ Ruta para renovar el token
+router.post("/renovar-token", async (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(403).json({ mensaje: "Refresh token no proporcionado" });
+  }
+
+  try {
+    const decodificado = jwt.verify(refreshToken, process.env.JWT_SECRET || "clave_secreta");
+
+    // Si el refresh token es válido, generamos un nuevo access token
+    const usuario = await Usuario.buscarPorCorreo(decodificado.correo);
+    if (!usuario) {
+      return res.status(404).json({ mensaje: "Usuario no encontrado" });
+    }
+
+    const newAccessToken = generarToken(usuario);
+    return res.json({ accessToken: newAccessToken });
+  } catch (error) {
+    console.error("Error al renovar token:", error);
+    return res.status(403).json({ mensaje: "Refresh token inválido" });
+  }
+});
+
 
 // ✅ Ruta protegida de prueba
 router.get("/protegida", verificarToken, (req, res) => {
