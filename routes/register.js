@@ -1,338 +1,368 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const { verificarToken } = require("../routes/auth"); // Ajusta la ruta si está en otro lugar
 
-router.post("/add", async (req, res) => {
-  let {
-    fecha_vacuna,
-    tipo_vacunas_id_tipo_vacuna,
-    chip_animal,
-    nombre_vacunas_id_vacuna,
-    dosis_administrada,
-    observaciones,
-  } = req.body;
+const uploadDirectory = "uploads";
+if (!fs.existsSync(uploadDirectory)) {
+  fs.mkdirSync(uploadDirectory);
+}
 
-  if (!fecha_vacuna || !chip_animal || !dosis_administrada) {
-    return res.status(400).json({ error: "Todos los campos son obligatorios" });
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/"); // asegura que la carpeta exista
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({ storage: storage });
+
+router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
+  const id_usuario = req.usuario?.id; // Verificar que el ID del usuario esté presente
+
+  if (!id_usuario) {
+    return res.status(400).json({ error: "Usuario no autenticado" });
   }
 
+  let {
+    chip_animal,
+    peso_nacimiento,
+    raza_id_raza,
+    fecha_nacimiento,
+    id_madre,
+    id_padre,
+    enfermedades,
+    observaciones,
+    procedencia,
+    hierro,
+    categoria,
+    ubicacion,
+    numero_parto, // Añadir el nuevo campo
+    precocidad, // Añadir el nuevo campo
+    tipo_monta,
+  } = req.body;
+
+  if (!req.file) {
+    return res.status(400).json({ error: "No se subió una foto" });
+  }
+
+  console.log("Archivo recibido:", req.file);
+
+  const fotoPrincipal = req.file.filename;
+
+  // Verificar que los campos obligatorios estén presentes
+  if (!chip_animal || !peso_nacimiento || !raza_id_raza || !fecha_nacimiento) {
+    return res.status(400).json({ error: "Faltan campos obligatorios" });
+  }
+
+  // Convertir id_madre y id_padre a null si no están presentes
+  id_madre = id_madre || null;
+  id_padre = id_padre || null;
+  enfermedades = enfermedades || null;
+  observaciones = observaciones || null;
+  procedencia = procedencia || null;
+  hierro = hierro || null;
+  categoria = categoria || null;
+  ubicacion = ubicacion || null;
+
   try {
-    const [animal] = await db.query(
-      "SELECT id FROM registro_animal WHERE chip_animal = ?",
+    const [existingChip] = await db.query(
+      `SELECT * FROM registro_animal WHERE chip_animal = ?`,
       [chip_animal]
     );
 
-    if (animal.length === 0) {
-      return res
-        .status(404)
-        .json({
-          error: "El animal con este chip no existe en la base de datos",
-        });
+    if (existingChip.length > 0) {
+      return res.status(400).json({ error: "El chip ya está registrado" });
     }
 
-    const registro_animal_id = animal[0].id;
-
-    const [vacuna] = await db.query(
-      "SELECT id_vacuna FROM nombre_vacunas WHERE id_vacuna = ?",
-      [nombre_vacunas_id_vacuna]
+    const [razaResult] = await db.query(
+      `SELECT id_raza FROM raza WHERE id_raza = ?`,
+      [raza_id_raza]
     );
-    if (vacuna.length === 0) {
-      nombre_vacunas_id_vacuna = 23;
+
+    if (razaResult.length === 0) {
+      console.warn('Raza no encontrada, asignando "Otra Raza" (id 25)');
+      raza_id_raza = 25;
     }
 
-    const [tipoVacuna] = await db.query(
-      "SELECT id_tipo_vacuna FROM tipo_vacunas WHERE id_tipo_vacuna = ?",
-      [tipo_vacunas_id_tipo_vacuna]
-    );
-    if (tipoVacuna.length === 0) {
-      tipo_vacunas_id_tipo_vacuna = 11;
-    }
+    const queryInsert = `
+  INSERT INTO registro_animal 
+  (foto, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones, id_usuario, procedencia, hierro, categoria, ubicacion, numero_parto, precocidad, tipo_monta, created_at) 
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
 
-    if (
-      typeof dosis_administrada === "string" &&
-      !dosis_administrada.includes(" ")
-    ) {
-      return res
-        .status(400)
-        .json({
-          error:
-            'La dosis administrada debe incluir la cantidad y la unidad (ej. "3 ml")',
-        });
-    }
-
-    const insertQuery = `
-            INSERT INTO historico_vacuna 
-            (fecha_vacuna, tipo_vacunas_id_tipo_vacuna, registro_animal_id, nombre_vacunas_id_vacuna, dosis_administrada, observaciones) 
-            VALUES (?, ?, ?, ?, ?, ?)`;
-
-    const [result] = await db.query(insertQuery, [
-      fecha_vacuna,
-      tipo_vacunas_id_tipo_vacuna,
-      registro_animal_id,
-      nombre_vacunas_id_vacuna,
-      dosis_administrada,
+    const values = [
+      fotoPrincipal,
+      chip_animal,
+      peso_nacimiento,
+      raza_id_raza,
+      fecha_nacimiento,
+      id_madre,
+      id_padre,
+      enfermedades,
       observaciones,
-    ]);
+      id_usuario,
+      procedencia,
+      hierro,
+      categoria,
+      ubicacion,
+      numero_parto,
+      precocidad,
+      tipo_monta,
+    ];
 
+    const [result] = await db.query(queryInsert, values);
     res
       .status(201)
-      .json({ message: "Vacuna registrada con éxito", id: result.insertId });
+      .json({ message: "Registro agregado con éxito", id: result.insertId });
   } catch (error) {
-    console.error("❌ Error al registrar vacuna:", error);
-    res.status(500).json({ error: "Error al registrar la vacuna" });
+    console.error("Error en la base de datos:", error);
+    res.status(500).json({ error: "Error al registrar el animal" });
   }
 });
 
 router.delete("/delete/:chip_animal", async (req, res) => {
   const { chip_animal } = req.params;
+  const query = `DELETE FROM registro_animal WHERE chip_animal = ?`;
 
   try {
-    const [animal] = await db.query(
-      "SELECT id FROM registro_animal WHERE chip_animal = ?",
-      [chip_animal]
-    );
+    const [result] = await db.query(query, [chip_animal]);
+    if (result.affectedRows === 0)
+      return res.status(404).json({ error: "Registro no encontrado" });
 
-    if (animal.length === 0) {
-      return res
-        .status(404)
-        .json({
-          error: "El animal con este chip no existe en la base de datos",
-        });
-    }
-
-    const registro_animal_id = animal[0].id;
-
-    const [result] = await db.query(
-      "DELETE FROM historico_vacuna WHERE registro_animal_id = ?",
-      [registro_animal_id]
-    );
-
-    if (result.affectedRows === 0) {
-      return res
-        .status(404)
-        .json({ error: "No se encontró el registro de vacuna para el animal" });
-    }
-
-    res.json({ message: "Vacuna eliminada con éxito" });
-  } catch (error) {
-    console.error("❌ Error al eliminar vacuna:", error);
-    res.status(500).json({ error: "Error al eliminar la vacuna" });
+    res.status(200).json({ message: "Registro eliminado con éxito" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al eliminar el registro" });
   }
 });
 
 router.get("/all", async (req, res) => {
+  const query = `SELECT * FROM vista_registro_animal`;
+
   try {
-    const [results] = await db.query("SELECT * FROM historico_vacuna");
-    res.json(results);
-  } catch (error) {
-    console.error("❌ Error al obtener vacunas:", error);
-    res.status(500).json({ error: "Error al obtener las vacunas" });
-  }
-});
-router.get("/historico-vacunas", async (req, res) => {
-  try {
-    const [rows] = await db.query(`
-        SELECT id, chip_animal, fecha_vacuna, tipo_vacuna, nombre, dosis_administrada, observaciones
-        FROM vista_historico_vacuna
-        ORDER BY fecha_vacuna DESC
-      `);
-
-    if (rows.length === 0) {
-      return res
-        .status(404)
-        .json({ error: "No se encontraron registros de vacunas" });
-    }
-
-    const response = rows.map((row) => ({
-      id: row.id,
-      fecha: row.fecha_vacuna,
-      chip: row.chip_animal,
-      nombre: row.nombre,
-      tipo: row.tipo_vacuna,
-      dosis: row.dosis_administrada,
-      obs: row.observaciones,
-    }));
-
-    res.json(response);
-  } catch (error) {
-    console.error("Error al obtener histórico de vacunas:", error);
-    res.status(500).json({ message: "Error interno del servidor" });
+    const [results] = await db.query(query);
+    res.status(200).json(results);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener los registros" });
   }
 });
 
 router.get("/animal/:chip_animal", async (req, res) => {
   const { chip_animal } = req.params;
-
-  const query = `
-        SELECT 
-            hv.fecha_vacuna, 
-            nv.nombre AS nombre_vacuna, 
-            tv.tipo AS tipo_vacuna, 
-            ra.chip_animal, 
-            hv.dosis_administrada, 
-            hv.observaciones, 
-            hv.created_at AS creado, 
-            hv.updated_at AS actualizado
-        FROM historico_vacuna hv
-        JOIN registro_animal ra ON hv.registro_animal_id = ra.id
-        LEFT JOIN nombre_vacunas nv ON hv.nombre_vacunas_id_vacuna = nv.id_vacuna
-        LEFT JOIN tipo_vacunas tv ON hv.tipo_vacunas_id_tipo_vacuna = tv.id_tipo_vacuna
-        WHERE ra.chip_animal = ?;
-    `;
+  const query = `SELECT * FROM vista_registro_animal WHERE chip_animal = ?`;
 
   try {
     const [results] = await db.query(query, [chip_animal]);
+    if (results.length === 0)
+      return res.status(404).json({ error: "Registro no encontrado" });
 
-    if (results.length === 0) {
-      return res
-        .status(404)
-        .json({
-          error: `No se encontraron registros de vacunas para el chip_animal ${chip_animal}`,
-        });
+    res.status(200).json(results[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener el registro" });
+  }
+});
+
+router.put(
+  "/update/:chip_animal",
+  verificarToken,
+  upload.single("foto"),
+  async (req, res) => {
+    const chip_animal_original = req.params.chip_animal;
+
+    // Extraer datos del body (para FormData) o de req.body (para JSON)
+    const {
+      chip_animal = req.body.chip_animal,
+      peso_nacimiento = req.body.peso_nacimiento,
+      raza_id_raza = req.body.raza_id_raza,
+      fecha_nacimiento = req.body.fecha_nacimiento,
+      id_madre = req.body.id_madre,
+      id_padre = req.body.id_padre,
+      enfermedades = req.body.enfermedades,
+      observaciones = req.body.observaciones,
+      categoria = req.body.categoria, // Añadir categoría
+      procedencia = req.body.procedencia,
+      hierro = req.body.hierro,
+      ubicacion = req.body.ubicacion,
+      numero_parto = req.body.numero_parto,
+      precocidad = req.body.precocidad,
+      tipo_monta = req.body.tipo_monta,
+    } = req.body;
+
+    try {
+      // Verificar que el registro existe en la tabla base
+      const [existingRecord] = await db.query(
+        `SELECT * FROM registro_animal WHERE chip_animal = ?`,
+        [chip_animal_original]
+      );
+
+      if (existingRecord.length === 0) {
+        console.log("ERROR: Registro no encontrado en tabla base");
+        return res.status(404).json({ error: "Registro no encontrado" });
+      }
+
+      // Validar y formatear la fecha
+      const fechaFormateada = fecha_nacimiento
+        ? fecha_nacimiento.split("T")[0]
+        : null;
+
+      // Verificar si la raza existe
+      const [razaResult] = await db.query(
+        `SELECT id_raza FROM raza WHERE id_raza = ?`,
+        [raza_id_raza]
+      );
+
+      if (razaResult.length === 0) {
+        console.warn('Raza no encontrada, asignando "Otra Raza" (id 25)');
+        raza_id_raza = 25;
+      }
+
+      // Preparar la consulta SQL dinámicamente
+      let setClauses = [];
+      let values = [];
+
+      // Campos obligatorios
+      setClauses.push("chip_animal = ?");
+      values.push(chip_animal);
+
+      setClauses.push("peso_nacimiento = ?");
+      values.push(peso_nacimiento);
+
+      setClauses.push("raza_id_raza = ?");
+      values.push(raza_id_raza);
+
+      setClauses.push("fecha_nacimiento = ?");
+      values.push(fechaFormateada);
+
+      // Campos opcionales
+      if (id_madre) {
+        setClauses.push("id_madre = ?");
+        values.push(id_madre);
+      } else {
+        setClauses.push("id_madre = NULL");
+      }
+
+      if (id_padre) {
+        setClauses.push("id_padre = ?");
+        values.push(id_padre);
+      } else {
+        setClauses.push("id_padre = NULL");
+      }
+
+      setClauses.push("procedencia = ?");
+      values.push(procedencia);
+
+      setClauses.push("hierro = ?");
+      values.push(hierro);
+
+      setClauses.push("categoria = ?");
+      values.push(categoria);
+
+      setClauses.push(" ubicacion = ?");
+      values.push(ubicacion);
+
+      // Normalizar categoría para evitar problemas de acentos
+      const categoriaNormalizada = categoria
+        ? categoria
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase()
+        : null;
+
+      if (categoriaNormalizada === "cria") {
+        setClauses.push("numero_parto = ?");
+        values.push(numero_parto || null);
+
+        setClauses.push("precocidad = ?");
+        values.push(precocidad || null);
+
+        setClauses.push("tipo_monta = ?");
+        values.push(tipo_monta || null);
+      } else {
+        // Si NO es cria → forzamos a NULL en la BD
+        setClauses.push("numero_parto = NULL");
+        setClauses.push("precocidad = NULL");
+        setClauses.push("tipo_monta = NULL");
+      }
+
+      // Manejar enfermedades (puede ser string o array)
+      if (enfermedades) {
+        let enfermedadesFormateadas;
+        if (Array.isArray(enfermedades)) {
+          enfermedadesFormateadas = enfermedades.join(",");
+        } else if (typeof enfermedades === "string") {
+          enfermedadesFormateadas = enfermedades;
+        } else {
+          enfermedadesFormateadas = null;
+        }
+
+        setClauses.push("enfermedades = ?");
+        values.push(enfermedadesFormateadas);
+      } else {
+        setClauses.push("enfermedades = NULL");
+      }
+
+      if (observaciones) {
+        setClauses.push("observaciones = ?");
+        values.push(observaciones);
+      } else {
+        setClauses.push("observaciones = NULL");
+      }
+
+      // Manejar la foto si se subió una nueva
+      if (req.file) {
+        setClauses.push("foto = ?");
+        values.push(req.file.filename);
+      }
+
+      // Construir la consulta final
+      const queryUpdate = `
+      UPDATE registro_animal 
+      SET ${setClauses.join(", ")} 
+      WHERE chip_animal = ?`;
+
+      values.push(chip_animal_original);
+
+      console.log("Consulta SQL:", queryUpdate);
+      console.log("Valores:", values);
+
+      const [result] = await db.query(queryUpdate, values);
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: "Registro no encontrado" });
+      }
+
+      res.status(200).json({
+        message: "Registro actualizado con éxito",
+        changes: result.changedRows,
+      });
+    } catch (err) {
+      console.error("Error en la base de datos:", err);
+      res.status(500).json({
+        error: "Error al actualizar el registro",
+        details: err.message,
+        sql: err.sql,
+      });
     }
+  }
+);
 
+router.get("/razas", async (req, res) => {
+  const query = `SELECT * FROM raza`;
+
+  try {
+    const [results] = await db.query(query);
     res.status(200).json(results);
   } catch (err) {
-    console.error("❌ Error al obtener las vacunas:", err);
-    res.status(500).json({ error: "Error al obtener las vacunas" });
-  }
-});
-
-router.put("/:id", async (req, res) => {
-  console.log("Ruta PUT alcanzada"); // Asegúrate de que se está ejecutando la ruta
-  const { id } = req.params;
-  console.log("ID recibido:", id); // Verifica el id que llega
-  const {
-    fecha_vacuna,
-    tipo_vacunas_id_tipo_vacuna,
-    nombre_vacunas_id_vacuna,
-    dosis_administrada,
-    observaciones,
-  } = req.body;
-  console.log("Datos recibidos:", {
-    fecha_vacuna,
-    tipo_vacunas_id_tipo_vacuna,
-    nombre_vacunas_id_vacuna,
-    dosis_administrada,
-    observaciones,
-  });
-  // Verifica que los campos no sean nulos antes de incluirlos en la consulta
-  const updateFields = [];
-  const values = [];
-
-  if (fecha_vacuna) {
-    updateFields.push("fecha_vacuna = ?");
-    values.push(fecha_vacuna);
-  }
-  if (tipo_vacunas_id_tipo_vacuna) {
-    updateFields.push("tipo_vacunas_id_tipo_vacuna = ?");
-    values.push(tipo_vacunas_id_tipo_vacuna);
-  }
-  if (nombre_vacunas_id_vacuna) {
-    updateFields.push("nombre_vacunas_id_vacuna = ?");
-    values.push(nombre_vacunas_id_vacuna);
-  }
-  if (dosis_administrada) {
-    updateFields.push("dosis_administrada = ?");
-    values.push(dosis_administrada);
-  }
-  if (observaciones !== undefined) {
-    updateFields.push("observaciones = ?");
-    values.push(observaciones);
-  }
-
-  // Si no hay campos para actualizar, regresa un error
-  if (updateFields.length === 0) {
-    return res.status(400).json({ error: "No hay campos para actualizar" });
-  }
-
-  // Agregar el ID al final de los valores
-  values.push(id);
-
-  const updateQuery = `
-        UPDATE historico_vacuna
-        SET ${updateFields.join(", ")}
-        WHERE id = ?
-    `;
-
-  try {
-    const [result] = await db.query(updateQuery, values);
-
-    if (result.affectedRows === 0) {
-      return res
-        .status(404)
-        .json({ error: "Vacuna no encontrada para actualizar" });
-    }
-
-    res.json({ message: "Vacuna actualizada con éxito" });
-  } catch (error) {
-    console.error("❌ Error al actualizar vacuna:", error);
-    res.status(500).json({ error: "Error al actualizar la vacuna" });
-  }
-});
-
-router.put("/chip/:id", async (req, res) => {
-  const { id } = req.params;
-
-  const {
-    fecha_vacuna,
-    tipo_vacunas_id_tipo_vacuna,
-    nombre_vacunas_id_vacuna,
-    dosis_administrada,
-    observaciones,
-  } = req.body;
-
-  try {
-    const updateQuery = `
-            UPDATE historico_vacuna 
-            SET fecha_vacuna = ?, tipo_vacunas_id_tipo_vacuna = ?, 
-                nombre_vacunas_id_vacuna = ?, dosis_administrada = ?, observaciones = ? 
-            WHERE id = ?`;
-
-    const [result] = await db.query(updateQuery, [
-      fecha_vacuna,
-      tipo_vacunas_id_tipo_vacuna,
-      nombre_vacunas_id_vacuna,
-      dosis_administrada,
-      observaciones,
-      id,  // <- aquí estaba el error, usar 'id' en vez de 'chip_animal'
-    ]);
-
-    if (result.affectedRows === 0) {
-      return res
-        .status(404)
-        .json({ error: "Vacuna no encontrada para actualizar" });
-    }
-
-    res.json({ message: "Vacuna actualizada con éxito" });
-  } catch (error) {
-    console.error("❌ Error al actualizar vacuna:", error);
-    res.status(500).json({ error: "Error al actualizar la vacuna" });
-  }
-});
-
-
-router.get("/tipos-vacuna", async (req, res) => {
-  try {
-    const [tipos] = await db.query(
-      "SELECT id_tipo_vacuna AS value, tipo AS label FROM tipo_vacunas"
-    );
-    res.json(tipos);
-  } catch (error) {
-    console.error("❌ Error al obtener tipos de vacuna:", error);
-    res.status(500).json({ error: "Error al obtener tipos de vacuna" });
-  }
-});
-
-router.get("/nombres-vacuna", async (req, res) => {
-  try {
-    const [nombres] = await db.query(
-      "SELECT id_vacuna AS value, nombre AS label FROM nombre_vacunas"
-    );
-    res.json(nombres);
-  } catch (error) {
-    console.error("❌ Error al obtener nombres de vacuna:", error);
-    res.status(500).json({ error: "Error al obtener nombres de vacuna" });
+    console.error(err);
+    res.status(500).json({ error: "Error al obtener las razas" });
   }
 });
 
