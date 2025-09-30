@@ -3,12 +3,18 @@
 
 const express = require('express');
 const router = express.Router();
-const { verificarToken } = require('../middleware/auth'); // Ajusta la ruta según tu proyecto
-
+const { verificarToken } = require('../routes/auth'); // Ajusta la ruta según tu proyecto
+const db = require('../db');
 // ============================================
 // ENDPOINT PULL: Traer cambios del servidor
 // ============================================
-
+router.get('/test', (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'Endpoints de sincronización funcionando',
+    timestamp: new Date().toISOString()
+  });
+});
 /**
  * GET /sync/registro_animal?since=2024-01-01T00:00:00.000Z
  * Obtener todos los animales modificados desde una fecha específica
