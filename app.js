@@ -7,7 +7,6 @@ const redis = require('redis');  // Asegúrate de que esta línea esté presente
 
 
 
-
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -28,6 +27,8 @@ app.use('/weighing', weighingRoutes);
 // Servir imágenes estáticas
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+const syncRoutes = require('./routes/sync');
+app.use('/api/sync', syncRoutes);
 
 
 // Ruta de prueba para verificar la conexión a MySQL
