@@ -22,24 +22,36 @@ const generarToken = (usuario) => {
 
 // 🔒 Middleware de autenticación
 const verificarToken = (req, res, next) => {
-  const token = req.headers["authorization"];
+  const authHeader = req.headers["authorization"];
 
-  if (!token) {
+  if (!authHeader) {
     return res.status(403).json({ mensaje: "Token no proporcionado" });
   }
 
   try {
-    const tokenLimpio = token.replace("Bearer ", "");
-    console.log("Token recibido:", tokenLimpio); // Verifica el token recibido
+    let token;
+    
+    // Verificar si tiene el prefijo Bearer
+    if (authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7); // Remover "Bearer "
+    } else {
+      token = authHeader; // Usar directamente si no tiene Bearer
+    }
+
+    console.log("Header completo:", authHeader);
+    console.log("Token extraído:", token.substring(0, 20) + "...");
+
     const decodificado = jwt.verify(
-      tokenLimpio,
+      token,
       process.env.JWT_SECRET || "clave_secreta"
     );
-    console.log("Token decodificado:", decodificado); // Verifica el contenido del token decodificado
+    
+    console.log("Token decodificado exitosamente:", decodificado.id);
     req.usuario = decodificado;
     next();
+    
   } catch (error) {
-    console.error("Error al verificar el token:", error); // Verifica cualquier error de verificación
+    console.error("Error al verificar el token:", error.message);
     return res.status(401).json({ mensaje: "Token inválido" });
   }
 };

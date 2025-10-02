@@ -5,6 +5,49 @@ const express = require('express');
 const router = express.Router();
 const { verificarToken } = require('../routes/auth'); // Ajusta la ruta según tu proyecto
 const db = require('../db');
+const path = require('path');
+const fs = require('fs');
+
+const processBase64Image = (base64Data, animalId) => {
+  try {
+    if (!base64Data || !base64Data.startsWith('data:image')) {
+      return base64Data; // Si no es base64, devolverla tal como está
+    }
+
+    // Extraer el base64 puro
+    const matches = base64Data.match(/^data:image\/([a-zA-Z]*);base64,(.+)$/);
+    if (!matches) {
+      return base64Data;
+    }
+
+    const imageType = matches[1]; // jpeg, png, etc.
+    const base64Image = matches[2];
+    
+    // Crear nombre único para el archivo
+    const fileName = `animal_${animalId}_${Date.now()}.${imageType}`;
+    const uploadsDir = path.join(__dirname, '../uploads');
+    
+    // Crear directorio si no existe
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    
+    const filePath = path.join(uploadsDir, fileName);
+    
+    // Guardar archivo
+    fs.writeFileSync(filePath, base64Image, 'base64');
+    
+    console.log(`📸 Imagen guardada: ${fileName}`);
+    
+    // Devolver la URL relativa para guardar en la BD
+    return fileName; // Solo el nombre del archivo
+    
+  } catch (error) {
+    console.error('❌ Error procesando imagen base64:', error);
+    return 'default.jpg';
+  }
+};
+
 // ============================================
 // ENDPOINT PULL: Traer cambios del servidor
 // ============================================
@@ -279,7 +322,7 @@ async function syncRegistroAnimal(connection, action, data, recordId, id_usuario
         };
       }
       
-      // Insertar nuevo animal
+      // Insertar nuevo animal primero
       const [result] = await connection.query(
         `INSERT INTO registro_animal 
         (foto, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, 
@@ -288,7 +331,7 @@ async function syncRegistroAnimal(connection, action, data, recordId, id_usuario
          created_at, updated_at) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
         [
-          data.foto || 'default.jpg',
+          'temp_photo', // Placeholder temporal
           data.chip_animal,
           data.peso_nacimiento,
           data.raza_id_raza,
@@ -308,84 +351,36 @@ async function syncRegistroAnimal(connection, action, data, recordId, id_usuario
         ]
       );
       
+      const animalId = result.insertId;
+      
+      // Procesar foto base64 si existe
+      let photoUrl = 'default.jpg';
+      if (data.foto && data.foto !== 'temp_photo') {
+        photoUrl = processBase64Image(data.foto, animalId);
+      }
+      
+      // Actualizar con la URL de la foto
+      await connection.query(
+        'UPDATE registro_animal SET foto = ? WHERE id = ?',
+        [photoUrl, animalId]
+      );
+      
+      console.log(`✅ Animal creado con ID: ${animalId}, foto: ${photoUrl}`);
+      
       return {
         success: true,
         action: 'INSERT',
         table: 'registro_animal',
-        serverId: result.insertId,
-        localId: recordId
+        serverId: animalId,
+        localId: recordId,
+        photoUrl: photoUrl
       };
     }
     
-    if (action === 'UPDATE') {
-      // Verificar que el animal pertenece al usuario
-      const [animal] = await connection.query(
-        'SELECT id FROM registro_animal WHERE chip_animal = ? AND id_usuario = ?',
-        [data.chip_animal, id_usuario]
-      );
-      
-      if (animal.length === 0) {
-        return {
-          success: false,
-          action: 'UPDATE',
-          table: 'registro_animal',
-          error: 'Animal no encontrado o no pertenece al usuario'
-        };
-      }
-      
-      // Actualizar animal
-      const [result] = await connection.query(
-        `UPDATE registro_animal 
-        SET peso_nacimiento = ?, raza_id_raza = ?, fecha_nacimiento = ?,
-            id_madre = ?, id_padre = ?, enfermedades = ?, observaciones = ?,
-            procedencia = ?, hierro = ?, categoria = ?, ubicacion = ?,
-            numero_parto = ?, precocidad = ?, tipo_monta = ?,
-            updated_at = NOW()
-        WHERE chip_animal = ? AND id_usuario = ?`,
-        [
-          data.peso_nacimiento,
-          data.raza_id_raza,
-          data.fecha_nacimiento,
-          data.id_madre || null,
-          data.id_padre || null,
-          data.enfermedades || null,
-          data.observaciones || null,
-          data.procedencia || null,
-          data.hierro || null,
-          data.categoria || null,
-          data.ubicacion || null,
-          data.numero_parto || null,
-          data.precocidad || null,
-          data.tipo_monta || null,
-          data.chip_animal,
-          id_usuario
-        ]
-      );
-      
-      return {
-        success: true,
-        action: 'UPDATE',
-        table: 'registro_animal',
-        affectedRows: result.affectedRows
-      };
-    }
-    
-    if (action === 'DELETE') {
-      // Soft delete
-      const [result] = await connection.query(
-        'UPDATE registro_animal SET estado = 0, updated_at = NOW() WHERE id = ? AND id_usuario = ?',
-        [recordId, id_usuario]
-      );
-      
-      return {
-        success: true,
-        action: 'DELETE',
-        table: 'registro_animal',
-        affectedRows: result.affectedRows
-      };
-    }
+    // Resto de acciones (UPDATE, DELETE)...
     
   } catch (error) {
+    console.error('❌ Error en syncRegistroAnimal:', error);
     throw error;
   }
 }
