@@ -10,40 +10,57 @@ const fs = require('fs');
 
 const processBase64Image = (base64Data, animalId) => {
   try {
+    console.log('📸 === PROCESANDO IMAGEN ===');
+    console.log('📸 Tipo de dato recibido:', typeof base64Data);
+    console.log('📸 Tamaño de datos:', base64Data?.length || 'Sin datos');
+    console.log('📸 Primeros 50 caracteres:', base64Data?.substring(0, 50) || 'Vacío');
+    
     if (!base64Data || !base64Data.startsWith('data:image')) {
-      return base64Data; // Si no es base64, devolverla tal como está
+      console.log('⚠️ No es base64 válido, devolviendo original:', base64Data);
+      return base64Data;
     }
 
     // Extraer el base64 puro
     const matches = base64Data.match(/^data:image\/([a-zA-Z]*);base64,(.+)$/);
     if (!matches) {
-      return base64Data;
+      console.log('❌ Formato base64 inválido');
+      return 'default.jpg';
     }
 
-    const imageType = matches[1]; // jpeg, png, etc.
+    const imageType = matches[1];
     const base64Image = matches[2];
+    
+    console.log('📸 Tipo de imagen detectado:', imageType);
+    console.log('📸 Tamaño del base64 puro:', base64Image.length);
     
     // Crear nombre único para el archivo
     const fileName = `animal_${animalId}_${Date.now()}.${imageType}`;
     const uploadsDir = path.join(__dirname, '../uploads');
     
+    console.log('📁 Directorio de destino:', uploadsDir);
+    
     // Crear directorio si no existe
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
+      console.log('📁 Directorio uploads creado');
     }
     
     const filePath = path.join(uploadsDir, fileName);
+    console.log('📁 Ruta completa del archivo:', filePath);
     
     // Guardar archivo
     fs.writeFileSync(filePath, base64Image, 'base64');
     
-    console.log(`📸 Imagen guardada: ${fileName}`);
+    // Verificar que se guardó correctamente
+    const stats = fs.statSync(filePath);
+    console.log(`✅ Imagen guardada exitosamente: ${fileName}`);
+    console.log(`📏 Tamaño del archivo: ${stats.size} bytes`);
     
-    // Devolver la URL relativa para guardar en la BD
-    return fileName; // Solo el nombre del archivo
+    return fileName;
     
   } catch (error) {
     console.error('❌ Error procesando imagen base64:', error);
+    console.error('❌ Stack trace:', error.stack);
     return 'default.jpg';
   }
 };
@@ -306,6 +323,15 @@ async function processSyncOperation(connection, operation, id_usuario) {
 async function syncRegistroAnimal(connection, action, data, recordId, id_usuario) {
   try {
     if (action === 'INSERT') {
+      console.log('🔄 === SINCRONIZANDO ANIMAL ===');
+      console.log('🔄 Chip:', data.chip_animal);
+      console.log('🔄 Datos de foto:', {
+        existe: !!data.foto,
+        tipo: typeof data.foto,
+        esBase64: data.foto?.startsWith('data:image'),
+        tamaño: data.foto?.length
+      });
+      
       // Verificar que el chip no exista
       const [existing] = await connection.query(
         'SELECT id FROM registro_animal WHERE chip_animal = ?',
@@ -352,11 +378,15 @@ async function syncRegistroAnimal(connection, action, data, recordId, id_usuario
       );
       
       const animalId = result.insertId;
+      console.log('✅ Animal insertado con ID:', animalId);
       
       // Procesar foto base64 si existe
       let photoUrl = 'default.jpg';
       if (data.foto && data.foto !== 'temp_photo') {
+        console.log('🔄 Procesando foto para animal:', animalId);
         photoUrl = processBase64Image(data.foto, animalId);
+      } else {
+        console.log('⚠️ No hay foto para procesar');
       }
       
       // Actualizar con la URL de la foto
@@ -365,7 +395,7 @@ async function syncRegistroAnimal(connection, action, data, recordId, id_usuario
         [photoUrl, animalId]
       );
       
-      console.log(`✅ Animal creado con ID: ${animalId}, foto: ${photoUrl}`);
+      console.log(`✅ Animal ${animalId} completado con foto: ${photoUrl}`);
       
       return {
         success: true,
@@ -377,7 +407,7 @@ async function syncRegistroAnimal(connection, action, data, recordId, id_usuario
       };
     }
     
-    // Resto de acciones (UPDATE, DELETE)...
+    // Resto de acciones...
     
   } catch (error) {
     console.error('❌ Error en syncRegistroAnimal:', error);
