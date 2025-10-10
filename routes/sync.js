@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { verificarToken } = require('../routes/auth'); // Ajusta la ruta según tu proyecto
+const { verificarToken } = require('../routes/auth'); 
 const db = require('../db');
 const path = require('path');
 const fs = require('fs');
