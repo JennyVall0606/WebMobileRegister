@@ -69,12 +69,13 @@ router.post('/add', async (req, res) => {
     }
 });
 
-// NUEVO ENDPOINT: Obtener datos de compra para calcular ganancias
+// ENDPOINT CORREGIDO: Obtener datos de compra para calcular ganancias
 router.get('/compra/:chip_animal', async (req, res) => {
     const { chip_animal } = req.params;
 
     try {
-        const [results] = await db.query(
+        // Primero intenta buscar con tipo_seguimiento = 'compra'
+        let [results] = await db.query(
             `SELECT 
                 id, 
                 fecha_pesaje, 
@@ -90,6 +91,26 @@ router.get('/compra/:chip_animal', async (req, res) => {
             LIMIT 1`, 
             [chip_animal]
         );
+
+        // Si no encuentra, busca el registro más antiguo que tenga costo_compra (compatibilidad con datos antiguos)
+        if (results.length === 0) {
+            [results] = await db.query(
+                `SELECT 
+                    id, 
+                    fecha_pesaje, 
+                    chip_animal, 
+                    peso_kg, 
+                    costo_compra, 
+                    precio_kg_compra,
+                    tipo_seguimiento
+                FROM historico_pesaje 
+                WHERE chip_animal = ? 
+                AND costo_compra IS NOT NULL
+                ORDER BY fecha_pesaje ASC 
+                LIMIT 1`, 
+                [chip_animal]
+            );
+        }
 
         if (results.length === 0) {
             return res.status(404).json({ error: "No se encontró un registro de compra para este animal" });
