@@ -13,6 +13,8 @@ router.post('/add', async (req, res) => {
         precio_kg_venta,
         tipo_seguimiento,
         ganancia_peso,
+         ganancia_peso_parcial,
+         tiempo_meses_parcial,   
         ganancia_valor,
         tiempo_meses
     } = req.body;
@@ -30,36 +32,41 @@ router.post('/add', async (req, res) => {
 
         const registro_animal_id = checkResult[0].id;
 
-        const [insertResult] = await db.query(
-            `INSERT INTO historico_pesaje (
-                registro_animal_id, 
-                chip_animal, 
-                fecha_pesaje, 
-                peso_kg, 
-                costo_compra, 
-                costo_venta, 
-                precio_kg_compra, 
-                precio_kg_venta,
-                tipo_seguimiento,
-                ganancia_peso,
-                ganancia_valor,
-                tiempo_meses
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                registro_animal_id, 
-                chip_animal, 
-                fecha_pesaje, 
-                peso_kg, 
-                costo_compra || null, 
-                costo_venta || null, 
-                precio_kg_compra || null, 
-                precio_kg_venta || null,
-                tipo_seguimiento,
-                ganancia_peso || null,
-                ganancia_valor || null,
-                tiempo_meses || null
-            ]
-        );
+
+const [insertResult] = await db.query(
+    `INSERT INTO historico_pesaje (
+        registro_animal_id, 
+        chip_animal, 
+        fecha_pesaje, 
+        peso_kg, 
+        costo_compra, 
+        costo_venta, 
+        precio_kg_compra, 
+        precio_kg_venta,
+        tipo_seguimiento,
+        ganancia_peso,
+        ganancia_valor,
+        ganancia_peso_parcial,
+        tiempo_meses_parcial,  
+        tiempo_meses
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+        registro_animal_id, 
+        chip_animal, 
+        fecha_pesaje, 
+        peso_kg, 
+        costo_compra || null, 
+        costo_venta || null, 
+        precio_kg_compra || null, 
+        precio_kg_venta || null,
+        tipo_seguimiento,              // ✅ Ahora coincide
+        ganancia_peso || null,         // ✅ Ahora coincide
+        ganancia_valor || null,        // ✅ Ahora coincide
+        ganancia_peso_parcial || null, // ✅ Ahora coincide
+        tiempo_meses_parcial || null,  // ✅ Ahora coincide
+        tiempo_meses || null           // ✅ Ahora coincide
+    ]
+);
 
         res.status(201).json({ message: "Pesaje agregado correctamente", id: insertResult.insertId });
 
@@ -166,7 +173,11 @@ router.get('/historico-pesaje', async (req, res) => {
                 costo_venta, 
                 precio_kg_compra, 
                 precio_kg_venta,
-                tipo_seguimiento,
+                CASE 
+                    WHEN tipo_seguimiento IS NULL AND costo_compra IS NULL AND costo_venta IS NULL 
+                    THEN 'nacimiento'
+                    ELSE tipo_seguimiento
+                END as tipo_seguimiento,
                 ganancia_peso,
                 ganancia_valor,
                 tiempo_meses

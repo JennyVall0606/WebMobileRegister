@@ -4,7 +4,7 @@ const db = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const { verificarToken } = require("../routes/auth"); // Ajusta la ruta si está en otro lugar
+const { verificarToken } = require("../routes/auth");
 
 const uploadDirectory = "uploads";
 if (!fs.existsSync(uploadDirectory)) {
@@ -13,7 +13,7 @@ if (!fs.existsSync(uploadDirectory)) {
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, "uploads/"); // asegura que la carpeta exista
+    cb(null, "uploads/");
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
@@ -24,7 +24,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
-  const id_usuario = req.usuario?.id; // Verificar que el ID del usuario esté presente
+  const id_usuario = req.usuario?.id;
 
   if (!id_usuario) {
     return res.status(400).json({ error: "Usuario no autenticado" });
@@ -43,25 +43,28 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
     hierro,
     categoria,
     ubicacion,
-    numero_parto, // Añadir el nuevo campo
-    precocidad, // Añadir el nuevo campo
+    numero_parto,
+    precocidad,
     tipo_monta,
   } = req.body;
+
+  console.log("📥 Datos recibidos:", {
+    chip_animal,
+    peso_nacimiento,
+    fecha_nacimiento,
+    raza_id_raza
+  });
 
   if (!req.file) {
     return res.status(400).json({ error: "No se subió una foto" });
   }
 
-  console.log("Archivo recibido:", req.file);
-
   const fotoPrincipal = req.file.filename;
 
-  // Verificar que los campos obligatorios estén presentes
   if (!chip_animal || !peso_nacimiento || !raza_id_raza || !fecha_nacimiento) {
     return res.status(400).json({ error: "Faltan campos obligatorios" });
   }
 
-  // Convertir id_madre y id_padre a null si no están presentes
   id_madre = id_madre || null;
   id_padre = id_padre || null;
   enfermedades = enfermedades || null;
@@ -71,17 +74,24 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
   categoria = categoria || null;
   ubicacion = ubicacion || null;
 
+  // Iniciar una transacción
+  const connection = await db.getConnection();
+  
   try {
-    const [existingChip] = await db.query(
+    await connection.beginTransaction();
+
+    const [existingChip] = await connection.query(
       `SELECT * FROM registro_animal WHERE chip_animal = ?`,
       [chip_animal]
     );
 
     if (existingChip.length > 0) {
+      await connection.rollback();
+      connection.release();
       return res.status(400).json({ error: "El chip ya está registrado" });
     }
 
-    const [razaResult] = await db.query(
+    const [razaResult] = await connection.query(
       `SELECT id_raza FROM raza WHERE id_raza = ?`,
       [raza_id_raza]
     );
@@ -92,9 +102,9 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
     }
 
     const queryInsert = `
-  INSERT INTO registro_animal 
-  (foto, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones, id_usuario, procedencia, hierro, categoria, ubicacion, numero_parto, precocidad, tipo_monta, created_at) 
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
+      INSERT INTO registro_animal 
+      (foto, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones, id_usuario, procedencia, hierro, categoria, ubicacion, numero_parto, precocidad, tipo_monta, created_at) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
 
     const values = [
       fotoPrincipal,
@@ -116,13 +126,69 @@ router.post("/add", verificarToken, upload.single("foto"), async (req, res) => {
       tipo_monta,
     ];
 
-    const [result] = await db.query(queryInsert, values);
-    res
-      .status(201)
-      .json({ message: "Registro agregado con éxito", id: result.insertId });
+    console.log("📤 Insertando animal...");
+    const [result] = await connection.query(queryInsert, values);
+    const registro_animal_id = result.insertId;
+    
+    console.log("✅ Animal registrado con ID:", registro_animal_id);
+    console.log("✅ Tipo de ID:", typeof registro_animal_id);
+
+    // Verificar que el ID sea válido
+    if (!registro_animal_id || registro_animal_id === 0) {
+      throw new Error("No se pudo obtener el ID del animal registrado");
+    }
+
+    // 🔥 REGISTRAR PESO INICIAL
+    console.log("📤 Intentando registrar peso inicial...");
+
+const queryPeso = `
+  INSERT INTO historico_pesaje (
+    registro_animal_id,
+    chip_animal,
+    fecha_pesaje,
+    peso_kg,
+    tipo_seguimiento,
+    created_at
+  ) VALUES (?, ?, ?, ?, 'nacimiento', NOW())`;
+
+    const valuesPeso = [
+      registro_animal_id,
+      chip_animal,
+      fecha_nacimiento,
+      parseFloat(peso_nacimiento) // Asegurar que sea número
+    ];
+
+    console.log("📤 Valores para peso:", valuesPeso);
+
+    const [pesoResult] = await connection.query(queryPeso, valuesPeso);
+
+    console.log("✅ Peso inicial registrado con ID:", pesoResult.insertId);
+
+    // Confirmar la transacción
+    await connection.commit();
+    connection.release();
+
+    res.status(201).json({ 
+      message: "Registro agregado con éxito", 
+      id: registro_animal_id,
+      peso_inicial_id: pesoResult.insertId
+    });
+
   } catch (error) {
-    console.error("Error en la base de datos:", error);
-    res.status(500).json({ error: "Error al registrar el animal" });
+    console.error("❌ Error completo:", error);
+    console.error("❌ Mensaje:", error.message);
+    console.error("❌ SQL:", error.sql);
+    console.error("❌ SQLMessage:", error.sqlMessage);
+    
+    // Revertir cambios
+    await connection.rollback();
+    connection.release();
+    
+    res.status(500).json({ 
+      error: "Error al registrar el animal",
+      details: error.message,
+      sqlMessage: error.sqlMessage
+    });
   }
 });
 
@@ -177,7 +243,6 @@ router.put(
   async (req, res) => {
     const chip_animal_original = req.params.chip_animal;
 
-    // Extraer datos del body (para FormData) o de req.body (para JSON)
     const {
       chip_animal = req.body.chip_animal,
       peso_nacimiento = req.body.peso_nacimiento,
@@ -187,7 +252,7 @@ router.put(
       id_padre = req.body.id_padre,
       enfermedades = req.body.enfermedades,
       observaciones = req.body.observaciones,
-      categoria = req.body.categoria, // Añadir categoría
+      categoria = req.body.categoria,
       procedencia = req.body.procedencia,
       hierro = req.body.hierro,
       ubicacion = req.body.ubicacion,
@@ -197,38 +262,31 @@ router.put(
     } = req.body;
 
     try {
-      // Verificar que el registro existe en la tabla base
       const [existingRecord] = await db.query(
         `SELECT * FROM registro_animal WHERE chip_animal = ?`,
         [chip_animal_original]
       );
 
       if (existingRecord.length === 0) {
-        console.log("ERROR: Registro no encontrado en tabla base");
         return res.status(404).json({ error: "Registro no encontrado" });
       }
 
-      // Validar y formatear la fecha
       const fechaFormateada = fecha_nacimiento
         ? fecha_nacimiento.split("T")[0]
         : null;
 
-      // Verificar si la raza existe
       const [razaResult] = await db.query(
         `SELECT id_raza FROM raza WHERE id_raza = ?`,
         [raza_id_raza]
       );
 
       if (razaResult.length === 0) {
-        console.warn('Raza no encontrada, asignando "Otra Raza" (id 25)');
         raza_id_raza = 25;
       }
 
-      // Preparar la consulta SQL dinámicamente
       let setClauses = [];
       let values = [];
 
-      // Campos obligatorios
       setClauses.push("chip_animal = ?");
       values.push(chip_animal);
 
@@ -241,7 +299,6 @@ router.put(
       setClauses.push("fecha_nacimiento = ?");
       values.push(fechaFormateada);
 
-      // Campos opcionales
       if (id_madre) {
         setClauses.push("id_madre = ?");
         values.push(id_madre);
@@ -265,34 +322,26 @@ router.put(
       setClauses.push("categoria = ?");
       values.push(categoria);
 
-      setClauses.push(" ubicacion = ?");
+      setClauses.push("ubicacion = ?");
       values.push(ubicacion);
 
-      // Normalizar categoría para evitar problemas de acentos
       const categoriaNormalizada = categoria
-        ? categoria
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .toLowerCase()
+        ? categoria.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
         : null;
 
       if (categoriaNormalizada === "cria") {
         setClauses.push("numero_parto = ?");
         values.push(numero_parto || null);
-
         setClauses.push("precocidad = ?");
         values.push(precocidad || null);
-
         setClauses.push("tipo_monta = ?");
         values.push(tipo_monta || null);
       } else {
-        // Si NO es cria → forzamos a NULL en la BD
         setClauses.push("numero_parto = NULL");
         setClauses.push("precocidad = NULL");
         setClauses.push("tipo_monta = NULL");
       }
 
-      // Manejar enfermedades (puede ser string o array)
       if (enfermedades) {
         let enfermedadesFormateadas;
         if (Array.isArray(enfermedades)) {
@@ -302,7 +351,6 @@ router.put(
         } else {
           enfermedadesFormateadas = null;
         }
-
         setClauses.push("enfermedades = ?");
         values.push(enfermedadesFormateadas);
       } else {
@@ -316,22 +364,17 @@ router.put(
         setClauses.push("observaciones = NULL");
       }
 
-      // Manejar la foto si se subió una nueva
       if (req.file) {
         setClauses.push("foto = ?");
         values.push(req.file.filename);
       }
 
-      // Construir la consulta final
       const queryUpdate = `
-      UPDATE registro_animal 
-      SET ${setClauses.join(", ")} 
-      WHERE chip_animal = ?`;
+        UPDATE registro_animal 
+        SET ${setClauses.join(", ")} 
+        WHERE chip_animal = ?`;
 
       values.push(chip_animal_original);
-
-      console.log("Consulta SQL:", queryUpdate);
-      console.log("Valores:", values);
 
       const [result] = await db.query(queryUpdate, values);
 
@@ -339,16 +382,51 @@ router.put(
         return res.status(404).json({ error: "Registro no encontrado" });
       }
 
+      // 🔥 ACTUALIZAR PESO INICIAL (donde tipo_seguimiento es NULL)
+      try {
+        const [updatePesoResult] = await db.query(
+          `UPDATE historico_pesaje SET 
+            fecha_pesaje = ?,
+            peso_kg = ?,
+            chip_animal = ?,
+            updated_at = NOW()
+          WHERE chip_animal = ? 
+          AND tipo_seguimiento IS NULL`,
+          [fechaFormateada, peso_nacimiento, chip_animal, chip_animal_original]
+        );
+
+        if (updatePesoResult.affectedRows > 0) {
+          console.log("✅ Peso inicial actualizado");
+        } else {
+          console.log("⚠️ No existe peso inicial, creando...");
+          
+          const registro_id = existingRecord[0].id;
+          await db.query(
+            `INSERT INTO historico_pesaje (
+              registro_animal_id,
+              chip_animal,
+              fecha_pesaje,
+              peso_kg,
+              created_at
+            ) VALUES (?, ?, ?, ?, NOW())`,
+            [registro_id, chip_animal, fechaFormateada, peso_nacimiento]
+          );
+          
+          console.log("✅ Peso inicial creado");
+        }
+      } catch (pesoError) {
+        console.error("⚠️ Error al actualizar peso inicial:", pesoError);
+      }
+
       res.status(200).json({
         message: "Registro actualizado con éxito",
-        changes: result.changedRows,
+        changes: result.changedRows
       });
     } catch (err) {
-      console.error("Error en la base de datos:", err);
+      console.error("Error:", err);
       res.status(500).json({
         error: "Error al actualizar el registro",
-        details: err.message,
-        sql: err.sql,
+        details: err.message
       });
     }
   }
