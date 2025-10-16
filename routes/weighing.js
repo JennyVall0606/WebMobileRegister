@@ -12,10 +12,10 @@ router.post('/add', async (req, res) => {
         precio_kg_compra, 
         precio_kg_venta,
         tipo_seguimiento,
-        ganancia_peso,
+        ganancia_kg,           // ✅ CAMBIAR nombre
         ganancia_peso_parcial,
         ganancia_valor,
-        tiempo_meses
+        periodo_meses          // ✅ CAMBIAR nombre (antes tiempo_meses)
     } = req.body;
 
     if (!chip_animal || !fecha_pesaje || !peso_kg) {
@@ -61,11 +61,11 @@ router.post('/add', async (req, res) => {
                 costo_venta || null, 
                 precio_kg_compra || null, 
                 precio_kg_venta || null,
-                tipoSeguimientoValido,  // ✅ Usar el valor validado
-                ganancia_peso || null,
+                tipoSeguimientoValido,
+                ganancia_kg || null,              // ✅ CAMBIAR nombre
                 ganancia_valor || null,
                 ganancia_peso_parcial || null,
-                tiempo_meses || null
+                periodo_meses || null             // ✅ CAMBIAR nombre
             ]
         );
 
@@ -77,12 +77,12 @@ router.post('/add', async (req, res) => {
     }
 });
 
-// ENDPOINT CORREGIDO: Obtener datos de compra para calcular ganancias
+// ✅ ENDPOINT CORREGIDO: Obtener datos de compra
 router.get('/compra/:chip_animal', async (req, res) => {
     const { chip_animal } = req.params;
 
     try {
-        // Primero intenta buscar con tipo_seguimiento = 'compra'
+        // Buscar el registro de compra más reciente
         let [results] = await db.query(
             `SELECT 
                 id, 
@@ -100,7 +100,7 @@ router.get('/compra/:chip_animal', async (req, res) => {
             [chip_animal]
         );
 
-        // Si no encuentra, busca el registro más antiguo que tenga costo_compra (compatibilidad con datos antiguos)
+        // Si no encuentra compra, buscar el registro más antiguo con costo_compra
         if (results.length === 0) {
             [results] = await db.query(
                 `SELECT 
