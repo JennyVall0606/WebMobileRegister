@@ -14,7 +14,6 @@ router.post('/add', async (req, res) => {
         tipo_seguimiento,
         ganancia_peso,
         ganancia_peso_parcial,
-        // tiempo_meses_parcial,   // ❌ ELIMINAR ESTA LÍNEA
         ganancia_valor,
         tiempo_meses
     } = req.body;
@@ -32,7 +31,11 @@ router.post('/add', async (req, res) => {
 
         const registro_animal_id = checkResult[0].id;
 
-        // ✅ Query SIN tiempo_meses_parcial
+        // ✅ Validar tipo_seguimiento
+        const tipoSeguimientoValido = ['compra', 'venta', 'seguimiento', 'nacimiento'].includes(tipo_seguimiento) 
+            ? tipo_seguimiento 
+            : 'seguimiento';
+
         const [insertResult] = await db.query(
             `INSERT INTO historico_pesaje (
                 registro_animal_id, 
@@ -58,11 +61,10 @@ router.post('/add', async (req, res) => {
                 costo_venta || null, 
                 precio_kg_compra || null, 
                 precio_kg_venta || null,
-                tipo_seguimiento || 'seguimiento',
+                tipoSeguimientoValido,  // ✅ Usar el valor validado
                 ganancia_peso || null,
                 ganancia_valor || null,
                 ganancia_peso_parcial || null,
-                // tiempo_meses_parcial || null,  // ❌ ELIMINAR ESTA LÍNEA
                 tiempo_meses || null
             ]
         );
