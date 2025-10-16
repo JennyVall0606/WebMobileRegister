@@ -13,14 +13,14 @@ router.post('/add', async (req, res) => {
         precio_kg_venta,
         tipo_seguimiento,
         ganancia_peso,
-         ganancia_peso_parcial,
-         tiempo_meses_parcial,   
+        ganancia_peso_parcial,
+        // tiempo_meses_parcial,   // ❌ ELIMINAR ESTA LÍNEA
         ganancia_valor,
         tiempo_meses
     } = req.body;
 
-    if (!chip_animal || !fecha_pesaje || !peso_kg || !tipo_seguimiento) {
-        return res.status(400).json({ error: "Los campos chip_animal, fecha_pesaje, peso_kg y tipo_seguimiento son obligatorios" });
+    if (!chip_animal || !fecha_pesaje || !peso_kg) {
+        return res.status(400).json({ error: "Los campos chip_animal, fecha_pesaje y peso_kg son obligatorios" });
     }
 
     try {
@@ -32,41 +32,40 @@ router.post('/add', async (req, res) => {
 
         const registro_animal_id = checkResult[0].id;
 
-
-const [insertResult] = await db.query(
-    `INSERT INTO historico_pesaje (
-        registro_animal_id, 
-        chip_animal, 
-        fecha_pesaje, 
-        peso_kg, 
-        costo_compra, 
-        costo_venta, 
-        precio_kg_compra, 
-        precio_kg_venta,
-        tipo_seguimiento,
-        ganancia_peso,
-        ganancia_valor,
-        ganancia_peso_parcial,
-        tiempo_meses_parcial,  
-        tiempo_meses
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-        registro_animal_id, 
-        chip_animal, 
-        fecha_pesaje, 
-        peso_kg, 
-        costo_compra || null, 
-        costo_venta || null, 
-        precio_kg_compra || null, 
-        precio_kg_venta || null,
-        tipo_seguimiento,              // ✅ Ahora coincide
-        ganancia_peso || null,         // ✅ Ahora coincide
-        ganancia_valor || null,        // ✅ Ahora coincide
-        ganancia_peso_parcial || null, // ✅ Ahora coincide
-        tiempo_meses_parcial || null,  // ✅ Ahora coincide
-        tiempo_meses || null           // ✅ Ahora coincide
-    ]
-);
+        // ✅ Query SIN tiempo_meses_parcial
+        const [insertResult] = await db.query(
+            `INSERT INTO historico_pesaje (
+                registro_animal_id, 
+                chip_animal, 
+                fecha_pesaje, 
+                peso_kg, 
+                costo_compra, 
+                costo_venta, 
+                precio_kg_compra, 
+                precio_kg_venta,
+                tipo_seguimiento,
+                ganancia_peso,
+                ganancia_valor,
+                ganancia_peso_parcial,
+                tiempo_meses
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                registro_animal_id, 
+                chip_animal, 
+                fecha_pesaje, 
+                peso_kg, 
+                costo_compra || null, 
+                costo_venta || null, 
+                precio_kg_compra || null, 
+                precio_kg_venta || null,
+                tipo_seguimiento || 'seguimiento',
+                ganancia_peso || null,
+                ganancia_valor || null,
+                ganancia_peso_parcial || null,
+                // tiempo_meses_parcial || null,  // ❌ ELIMINAR ESTA LÍNEA
+                tiempo_meses || null
+            ]
+        );
 
         res.status(201).json({ message: "Pesaje agregado correctamente", id: insertResult.insertId });
 
