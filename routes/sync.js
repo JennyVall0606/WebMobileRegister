@@ -1,4 +1,4 @@
-// routes/sync.js - NUEVO ARCHIVO
+// routes/sync.js - VERSIÓN CORREGIDA
 // Endpoints de sincronización para la aplicación offline-first
 
 const express = require('express');
@@ -75,6 +75,7 @@ router.get('/test', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
 /**
  * GET /sync/registro_animal?since=2024-01-01T00:00:00.000Z
  * Obtener todos los animales modificados desde una fecha específica
@@ -253,41 +254,82 @@ router.post('/batch', verificarToken, async (req, res) => {
   try {
     await connection.beginTransaction();
     
+    console.log(`🔄 [BATCH] Procesando ${operations.length} operación(es)`);
+    
     for (const operation of operations) {
       try {
+        console.log(`🔄 [BATCH] Procesando: ${operation.table} - ${operation.action}`);
+        
         const result = await processSyncOperation(
           connection, 
           operation, 
           id_usuario
         );
-        results.push(result);
+        
+        // ✅ VALIDAR QUE result TENGA success
+        if (!result || typeof result.success === 'undefined') {
+          console.error('⚠️ [BATCH] Operación sin resultado válido:', operation);
+          results.push({
+            success: false,
+            table: operation.table,
+            action: operation.action,
+            error: 'Operación no devolvió resultado válido'
+          });
+        } else {
+          results.push(result);
+          console.log(`✅ [BATCH] Operación exitosa:`, result);
+        }
+        
       } catch (error) {
-        console.error('Error en operación:', operation, error);
+        console.error('❌ [BATCH] Error en operación:', operation, error);
+        
+        // ✅ SIEMPRE agregar objeto con success: false
         results.push({
           success: false,
-          operation: operation,
-          error: error.message
+          table: operation.table,
+          action: operation.action,
+          error: error.message,
+          details: error.stack
         });
       }
     }
     
     await connection.commit();
     
-    res.json({
-      success: true,
-      results: results,
-      successCount: results.filter(r => r.success).length,
-      failCount: results.filter(r => !r.success).length,
-      timestamp: new Date().toISOString()
+    // ✅ VALIDAR ANTES DE ACCEDER A .success
+    const allSuccess = results.every(r => r && r.success === true);
+    const successCount = results.filter(r => r && r.success === true).length;
+    const failedCount = results.filter(r => !r || r.success === false).length;
+    
+    console.log(`📊 [BATCH] Resultado: ${successCount} exitosas, ${failedCount} fallidas`);
+    
+    // Usar 207 Multi-Status si hay errores parciales
+    const statusCode = allSuccess ? 200 : (successCount > 0 ? 207 : 500);
+    
+    res.status(statusCode).json({
+      success: allSuccess,
+      message: allSuccess 
+        ? 'Sincronización completada exitosamente' 
+        : `Sincronización con errores: ${successCount}/${results.length} exitosas`,
+      summary: {
+        total: results.length,
+        success: successCount,
+        failed: failedCount
+      },
+      results: results
     });
     
   } catch (error) {
+    console.error('❌ [BATCH] Error fatal en sincronización:', error);
+    
     await connection.rollback();
-    console.error('Error en batch sync:', error);
+    
+    // ✅ SIEMPRE devolver formato consistente
     res.status(500).json({
       success: false,
-      error: 'Error procesando sincronización por lotes',
-      details: error.message
+      error: "Error procesando sincronización por lotes",
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   } finally {
     connection.release();
@@ -295,24 +337,54 @@ router.post('/batch', verificarToken, async (req, res) => {
 });
 
 // ============================================
-// FUNCIÓN AUXILIAR: Procesar operación individual
+// PROCESADOR DE OPERACIONES
 // ============================================
 
 async function processSyncOperation(connection, operation, id_usuario) {
   const { table, action, data, recordId } = operation;
   
-  switch (table) {
-    case 'registro_animal':
-      return await syncRegistroAnimal(connection, action, data, recordId, id_usuario);
+  console.log(`🔄 [SYNC] Procesando ${table}.${action}`);
+  
+  // ✅ VALIDAR datos de entrada
+  if (!table || !action) {
+    return {
+      success: false,
+      error: 'Operación inválida: falta table o action',
+      table: table,
+      action: action
+    };
+  }
+  
+  try {
+    switch (table) {
+      case 'registro_animal':
+        return await syncRegistroAnimal(connection, action, data, recordId, id_usuario);
+      
+      case 'historico_pesaje':
+        return await syncHistoricoPesaje(connection, action, data, recordId, id_usuario);
+      
+      case 'historico_vacuna':
+        return await syncHistoricoVacuna(connection, action, data, recordId, id_usuario);
+      
+      default:
+        return {
+          success: false,
+          error: `Tabla no soportada: ${table}`,
+          table: table,
+          action: action
+        };
+    }
+  } catch (error) {
+    console.error(`❌ [SYNC] Error en ${table}.${action}:`, error);
     
-    case 'historico_pesaje':
-      return await syncHistoricoPesaje(connection, action, data, recordId, id_usuario);
-    
-    case 'historico_vacuna':
-      return await syncHistoricoVacuna(connection, action, data, recordId, id_usuario);
-    
-    default:
-      throw new Error(`Tabla no soportada: ${table}`);
+    // ✅ SIEMPRE devolver objeto con success
+    return {
+      success: false,
+      table: table,
+      action: action,
+      error: error.message,
+      details: error.stack
+    };
   }
 }
 
@@ -407,11 +479,22 @@ async function syncRegistroAnimal(connection, action, data, recordId, id_usuario
       };
     }
     
-    // Resto de acciones...
+    // Si no es INSERT, devolver respuesta por defecto
+    return {
+      success: false,
+      action: action,
+      table: 'registro_animal',
+      error: `Acción no implementada: ${action}`
+    };
     
   } catch (error) {
     console.error('❌ Error en syncRegistroAnimal:', error);
-    throw error;
+    return {
+      success: false,
+      action: action,
+      table: 'registro_animal',
+      error: error.message
+    };
   }
 }
 
@@ -486,15 +569,29 @@ async function syncHistoricoPesaje(connection, action, data, recordId, id_usuari
       );
       
       return {
-        success: true,
+        success: result.affectedRows > 0,
         action: 'UPDATE',
         table: 'historico_pesaje',
-        affectedRows: result.affectedRows
+        affectedRows: result.affectedRows,
+        error: result.affectedRows === 0 ? 'No se encontró el registro o no pertenece al usuario' : undefined
       };
     }
     
+    return {
+      success: false,
+      action: action,
+      table: 'historico_pesaje',
+      error: `Acción no implementada: ${action}`
+    };
+    
   } catch (error) {
-    throw error;
+    console.error('❌ Error en syncHistoricoPesaje:', error);
+    return {
+      success: false,
+      action: action,
+      table: 'historico_pesaje',
+      error: error.message
+    };
   }
 }
 
@@ -565,15 +662,29 @@ async function syncHistoricoVacuna(connection, action, data, recordId, id_usuari
       );
       
       return {
-        success: true,
+        success: result.affectedRows > 0,
         action: 'UPDATE',
         table: 'historico_vacuna',
-        affectedRows: result.affectedRows
+        affectedRows: result.affectedRows,
+        error: result.affectedRows === 0 ? 'No se encontró el registro o no pertenece al usuario' : undefined
       };
     }
     
+    return {
+      success: false,
+      action: action,
+      table: 'historico_vacuna',
+      error: `Acción no implementada: ${action}`
+    };
+    
   } catch (error) {
-    throw error;
+    console.error('❌ Error en syncHistoricoVacuna:', error);
+    return {
+      success: false,
+      action: action,
+      table: 'historico_vacuna',
+      error: error.message
+    };
   }
 }
 

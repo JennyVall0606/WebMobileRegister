@@ -5,20 +5,30 @@ const bcrypt = require("bcrypt");
 const Usuario = require("../models/user");
 const db = require("../db");
 
-
-// 🔐 Generar token
-const generarToken = (usuario) => {
-  return jwt.sign(
+// 🔐 Generar ambos tokens (acceso + refresh)
+const generarTokens = (usuario) => {
+  const accessToken = jwt.sign(
     {
       id: usuario.id || usuario.id_usuario,
       correo: usuario.correo,
       rol: usuario.rol
     },
     process.env.JWT_SECRET || 'clave_secreta',
-    { expiresIn: '1h' }
+    { expiresIn: '1h' }  // Token de acceso: 1 hora
   );
-};
 
+  const refreshToken = jwt.sign(
+    {
+      id: usuario.id || usuario.id_usuario,
+      correo: usuario.correo,
+      tipo: 'refresh'
+    },
+    process.env.JWT_REFRESH_SECRET || 'clave_secreta_refresh',
+    { expiresIn: '30d' }  // Token de refresco: 30 días
+  );
+
+  return { accessToken, refreshToken };
+};
 
 // 🔒 Middleware de autenticación
 const verificarToken = (req, res, next) => {
@@ -31,11 +41,10 @@ const verificarToken = (req, res, next) => {
   try {
     let token;
     
-    // Verificar si tiene el prefijo Bearer
     if (authHeader.startsWith("Bearer ")) {
-      token = authHeader.substring(7); // Remover "Bearer "
+      token = authHeader.substring(7);
     } else {
-      token = authHeader; // Usar directamente si no tiene Bearer
+      token = authHeader;
     }
 
     console.log("Header completo:", authHeader);
@@ -56,33 +65,27 @@ const verificarToken = (req, res, next) => {
   }
 };
 
-
 router.post("/registroUser", async (req, res) => {
   const { correo, contraseña, rol } = req.body;
 
-  // Validar que los campos requeridos estén presentes
   if (!correo || !contraseña || !rol) {
     return res.status(400).json({ mensaje: "Todos los campos son obligatorios" });
   }
 
   try {
-    // Verificar si el correo ya existe en la base de datos
     const usuarioExistente = await Usuario.buscarPorCorreo(correo);
     if (usuarioExistente) {
       return res.status(409).json({ mensaje: "El correo ya está registrado" });
     }
 
-    // Cifrar la contraseña antes de guardarla
     const contraseñaCifrada = await bcrypt.hash(contraseña, 10);
 
-    // Crear el nuevo usuario en la base de datos
     const nuevoUsuario = await Usuario.crear({
       correo,
       contraseña: contraseñaCifrada,
       rol,
     });
 
-    // Si se crea el usuario con éxito, responder con un mensaje
     return res.status(201).json({
       mensaje: "Usuario creado con éxito",
       usuario: {
@@ -96,9 +99,7 @@ router.post("/registroUser", async (req, res) => {
   }
 });
 
-
-
-// ✅ Ruta de login
+// ✅ Ruta de login - ACTUALIZADA para devolver ambos tokens
 router.post("/login", async (req, res) => {
   const { correo, contraseña } = req.body;
 
@@ -117,11 +118,67 @@ router.post("/login", async (req, res) => {
 
     console.log("Usuario encontrado:", usuario);
 
-    const token = generarToken(usuario);
-    return res.json({ token });
+    // 🔥 Generar ambos tokens
+    const { accessToken, refreshToken } = generarTokens(usuario);
+    
+    return res.json({ 
+      token: accessToken,           // Token principal (1 hora)
+      refreshToken: refreshToken,   // Token de refresco (30 días)
+      usuario: {
+        id: usuario.id || usuario.id_usuario,
+        correo: usuario.correo,
+        rol: usuario.rol
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ mensaje: "Error del servidor" });
+  }
+});
+
+// 🔄 NUEVA RUTA: Refresh token
+router.post("/refresh", async (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(403).json({ mensaje: "Refresh token no proporcionado" });
+  }
+
+  try {
+    console.log("🔄 Intentando refrescar token...");
+
+    // Verificar el refresh token
+    const decoded = jwt.verify(
+      refreshToken,
+      process.env.JWT_REFRESH_SECRET || 'clave_secreta_refresh'
+    );
+
+    if (decoded.tipo !== 'refresh') {
+      return res.status(403).json({ mensaje: "Token inválido" });
+    }
+
+    console.log("✅ Refresh token válido para:", decoded.correo);
+
+    // Buscar usuario
+    const usuario = await Usuario.buscarPorCorreo(decoded.correo);
+    
+    if (!usuario) {
+      return res.status(404).json({ mensaje: "Usuario no encontrado" });
+    }
+
+    // Generar nuevos tokens
+    const { accessToken, refreshToken: newRefreshToken } = generarTokens(usuario);
+
+    console.log("✅ Nuevos tokens generados");
+
+    return res.json({ 
+      token: accessToken,
+      refreshToken: newRefreshToken
+    });
+
+  } catch (error) {
+    console.error("❌ Error al refrescar token:", error.message);
+    return res.status(401).json({ mensaje: "Refresh token inválido o expirado" });
   }
 });
 
