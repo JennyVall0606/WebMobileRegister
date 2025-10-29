@@ -216,7 +216,7 @@ router.get("/mis-animales", verificarToken, async (req, res) => {
     console.error(error);
     res.status(500).json({ mensaje: "Error al obtener animales" });
   }
-});
+}); 
 
 module.exports = {
   router,

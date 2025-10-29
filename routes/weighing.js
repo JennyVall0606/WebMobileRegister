@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db'); 
+const db = require('../db');
+const { verificarToken } = require('./auth');
+const { adminOUser, cualquierUsuario } = require('../middlewares/authorization');
 
-router.post('/add', async (req, res) => {
+router.post('/add', verificarToken, adminOUser, async (req, res) => {
     const { 
         chip_animal, 
         fecha_pesaje, 
@@ -12,26 +14,38 @@ router.post('/add', async (req, res) => {
         precio_kg_compra, 
         precio_kg_venta,
         tipo_seguimiento,
-        ganancia_peso,         // ✅ CORREGIDO
+        ganancia_peso,
         ganancia_peso_parcial,
         ganancia_valor,
-        tiempo_meses           // ✅ CORREGIDO
+        tiempo_meses
     } = req.body;
+
+    const rolUsuario = req.usuario.rol;
+    const idUsuario = req.usuario.id;
 
     if (!chip_animal || !fecha_pesaje || !peso_kg) {
         return res.status(400).json({ error: "Los campos chip_animal, fecha_pesaje y peso_kg son obligatorios" });
     }
 
     try {
-        const [checkResult] = await db.query(`SELECT id FROM registro_animal WHERE chip_animal = ?`, [chip_animal]);
+        const [checkResult] = await db.query(
+            `SELECT id, id_usuario FROM registro_animal WHERE chip_animal = ?`, 
+            [chip_animal]
+        );
 
         if (checkResult.length === 0) {
             return res.status(404).json({ error: "El chip_animal no está registrado" });
         }
 
         const registro_animal_id = checkResult[0].id;
+        const id_usuario_animal = checkResult[0].id_usuario;
 
-        // ✅ Validar tipo_seguimiento
+        if (rolUsuario !== 'admin' && id_usuario_animal !== idUsuario) {
+            return res.status(403).json({ 
+                error: "No tienes permiso para registrar pesajes en este animal" 
+            });
+        }
+
         const tipoSeguimientoValido = ['compra', 'venta', 'seguimiento', 'nacimiento'].includes(tipo_seguimiento) 
             ? tipo_seguimiento 
             : 'seguimiento';
@@ -62,10 +76,10 @@ router.post('/add', async (req, res) => {
                 precio_kg_compra || null, 
                 precio_kg_venta || null,
                 tipoSeguimientoValido,
-                ganancia_peso || null,            // ✅ CORREGIDO
+                ganancia_peso || null,
                 ganancia_valor || null,
                 ganancia_peso_parcial || null,
-                tiempo_meses || null              // ✅ CORREGIDO
+                tiempo_meses || null
             ]
         );
 
@@ -77,47 +91,53 @@ router.post('/add', async (req, res) => {
     }
 });
 
-// ✅ ENDPOINT CORREGIDO: Obtener datos de compra
-router.get('/compra/:chip_animal', async (req, res) => {
+router.get('/compra/:chip_animal', verificarToken, cualquierUsuario, async (req, res) => {
     const { chip_animal } = req.params;
+    const rolUsuario = req.usuario.rol;
+    const idUsuario = req.usuario.id;
 
     try {
-        // Buscar el registro de compra más reciente
-        let [results] = await db.query(
-            `SELECT 
-                id, 
-                fecha_pesaje, 
-                chip_animal, 
-                peso_kg, 
-                costo_compra, 
-                precio_kg_compra,
-                tipo_seguimiento
-            FROM historico_pesaje 
-            WHERE chip_animal = ? 
-            AND tipo_seguimiento = 'compra' 
-            ORDER BY fecha_pesaje DESC 
-            LIMIT 1`, 
-            [chip_animal]
-        );
+        let query = `
+            SELECT 
+                hp.id, 
+                hp.fecha_pesaje, 
+                hp.chip_animal, 
+                hp.peso_kg, 
+                hp.costo_compra, 
+                hp.precio_kg_compra,
+                hp.tipo_seguimiento
+            FROM historico_pesaje hp
+            JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
+            WHERE hp.chip_animal = ? 
+            AND hp.tipo_seguimiento = 'compra'
+            ${rolUsuario !== 'admin' ? 'AND ra.id_usuario = ?' : ''}
+            ORDER BY hp.fecha_pesaje DESC 
+            LIMIT 1
+        `;
 
-        // Si no encuentra compra, buscar el registro más antiguo con costo_compra
+        const params = rolUsuario === 'admin' ? [chip_animal] : [chip_animal, idUsuario];
+        let [results] = await db.query(query, params);
+
         if (results.length === 0) {
-            [results] = await db.query(
-                `SELECT 
-                    id, 
-                    fecha_pesaje, 
-                    chip_animal, 
-                    peso_kg, 
-                    costo_compra, 
-                    precio_kg_compra,
-                    tipo_seguimiento
-                FROM historico_pesaje 
-                WHERE chip_animal = ? 
-                AND costo_compra IS NOT NULL
-                ORDER BY fecha_pesaje ASC 
-                LIMIT 1`, 
-                [chip_animal]
-            );
+            query = `
+                SELECT 
+                    hp.id, 
+                    hp.fecha_pesaje, 
+                    hp.chip_animal, 
+                    hp.peso_kg, 
+                    hp.costo_compra, 
+                    hp.precio_kg_compra,
+                    hp.tipo_seguimiento
+                FROM historico_pesaje hp
+                JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
+                WHERE hp.chip_animal = ? 
+                AND hp.costo_compra IS NOT NULL
+                ${rolUsuario !== 'admin' ? 'AND ra.id_usuario = ?' : ''}
+                ORDER BY hp.fecha_pesaje ASC 
+                LIMIT 1
+            `;
+
+            [results] = await db.query(query, params);
         }
 
         if (results.length === 0) {
@@ -132,11 +152,31 @@ router.get('/compra/:chip_animal', async (req, res) => {
     }
 });
 
-router.delete('/delete/:chip_animal', async (req, res) => {
+router.delete('/delete/:chip_animal', verificarToken, adminOUser, async (req, res) => {
     const { chip_animal } = req.params;
+    const rolUsuario = req.usuario.rol;
+    const idUsuario = req.usuario.id;
 
     try {
-        const [checkResult] = await db.query(`SELECT * FROM historico_pesaje WHERE chip_animal = ?`, [chip_animal]);
+        const [checkAnimal] = await db.query(
+            `SELECT id_usuario FROM registro_animal WHERE chip_animal = ?`,
+            [chip_animal]
+        );
+
+        if (checkAnimal.length === 0) {
+            return res.status(404).json({ error: "Animal no encontrado" });
+        }
+
+        if (rolUsuario !== 'admin' && checkAnimal[0].id_usuario !== idUsuario) {
+            return res.status(403).json({ 
+                error: "No tienes permiso para eliminar pesajes de este animal" 
+            });
+        }
+
+        const [checkResult] = await db.query(
+            `SELECT * FROM historico_pesaje WHERE chip_animal = ?`, 
+            [chip_animal]
+        );
 
         if (checkResult.length === 0) {
             return res.status(404).json({ error: "Pesaje no encontrado" });
@@ -152,9 +192,27 @@ router.delete('/delete/:chip_animal', async (req, res) => {
     }
 });
 
-router.get('/all', async (req, res) => {
+router.get('/all', verificarToken, cualquierUsuario, async (req, res) => {
+    const rolUsuario = req.usuario.rol;
+    const idUsuario = req.usuario.id;
+
     try {
-        const [results] = await db.query(`SELECT * FROM vista_historico_pesaje`);
+        let query;
+        let params = [];
+
+        if (rolUsuario === 'admin') {
+            query = `SELECT * FROM vista_historico_pesaje`;
+        } else {
+            query = `
+                SELECT vhp.* 
+                FROM vista_historico_pesaje vhp
+                JOIN registro_animal ra ON vhp.chip_animal = ra.chip_animal
+                WHERE ra.id_usuario = ?
+            `;
+            params = [idUsuario];
+        }
+
+        const [results] = await db.query(query, params);
         res.json(results);
     } catch (err) {
         console.error("Error al obtener los pesajes:", err);
@@ -162,29 +220,64 @@ router.get('/all', async (req, res) => {
     }
 });
 
-router.get('/historico-pesaje', async (req, res) => {
+router.get('/historico-pesaje', verificarToken, cualquierUsuario, async (req, res) => {
+    const rolUsuario = req.usuario.rol;
+    const idUsuario = req.usuario.id;
+
     try {
-        const [rows] = await db.query(`
-            SELECT 
-                id, 
-                fecha_pesaje, 
-                chip_animal, 
-                peso_kg, 
-                costo_compra, 
-                costo_venta, 
-                precio_kg_compra, 
-                precio_kg_venta,
-                CASE 
-                    WHEN tipo_seguimiento IS NULL AND costo_compra IS NULL AND costo_venta IS NULL 
-                    THEN 'nacimiento'
-                    ELSE tipo_seguimiento
-                END as tipo_seguimiento,
-                ganancia_peso,
-                ganancia_valor,
-                tiempo_meses
-            FROM historico_pesaje
-            ORDER BY fecha_pesaje DESC
-        `);
+        let query;
+        let params = [];
+
+        if (rolUsuario === 'admin') {
+            query = `
+                SELECT 
+                    id, 
+                    fecha_pesaje, 
+                    chip_animal, 
+                    peso_kg, 
+                    costo_compra, 
+                    costo_venta, 
+                    precio_kg_compra, 
+                    precio_kg_venta,
+                    CASE 
+                        WHEN tipo_seguimiento IS NULL AND costo_compra IS NULL AND costo_venta IS NULL 
+                        THEN 'nacimiento'
+                        ELSE tipo_seguimiento
+                    END as tipo_seguimiento,
+                    ganancia_peso,
+                    ganancia_valor,
+                    tiempo_meses
+                FROM historico_pesaje
+                ORDER BY fecha_pesaje DESC
+            `;
+        } else {
+            query = `
+                SELECT 
+                    hp.id, 
+                    hp.fecha_pesaje, 
+                    hp.chip_animal, 
+                    hp.peso_kg, 
+                    hp.costo_compra, 
+                    hp.costo_venta, 
+                    hp.precio_kg_compra, 
+                    hp.precio_kg_venta,
+                    CASE 
+                        WHEN hp.tipo_seguimiento IS NULL AND hp.costo_compra IS NULL AND hp.costo_venta IS NULL 
+                        THEN 'nacimiento'
+                        ELSE hp.tipo_seguimiento
+                    END as tipo_seguimiento,
+                    hp.ganancia_peso,
+                    hp.ganancia_valor,
+                    hp.tiempo_meses
+                FROM historico_pesaje hp
+                JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
+                WHERE ra.id_usuario = ?
+                ORDER BY hp.fecha_pesaje DESC
+            `;
+            params = [idUsuario];
+        }
+        
+        const [rows] = await db.query(query, params);
         
         if (rows.length === 0) {
             return res.status(404).json({ error: 'No se encontraron registros de pesaje' });
@@ -212,29 +305,35 @@ router.get('/historico-pesaje', async (req, res) => {
     }
 });
 
-router.get('/:chip_animal', async (req, res) => {
+router.get('/:chip_animal', verificarToken, cualquierUsuario, async (req, res) => {
     const { chip_animal } = req.params;
+    const rolUsuario = req.usuario.rol;
+    const idUsuario = req.usuario.id;
 
     try {
-        const [results] = await db.query(
-            `SELECT 
-                id, 
-                fecha_pesaje, 
-                chip_animal, 
-                peso_kg, 
-                costo_compra, 
-                costo_venta, 
-                precio_kg_compra, 
-                precio_kg_venta,
-                tipo_seguimiento,
-                ganancia_peso,
-                ganancia_valor,
-                tiempo_meses
-            FROM historico_pesaje 
-            WHERE chip_animal = ?
-            ORDER BY fecha_pesaje DESC`, 
-            [chip_animal]
-        );
+        let query = `
+            SELECT 
+                hp.id, 
+                hp.fecha_pesaje, 
+                hp.chip_animal, 
+                hp.peso_kg, 
+                hp.costo_compra, 
+                hp.costo_venta, 
+                hp.precio_kg_compra, 
+                hp.precio_kg_venta,
+                hp.tipo_seguimiento,
+                hp.ganancia_peso,
+                hp.ganancia_valor,
+                hp.tiempo_meses
+            FROM historico_pesaje hp
+            JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
+            WHERE hp.chip_animal = ?
+            ${rolUsuario !== 'admin' ? 'AND ra.id_usuario = ?' : ''}
+            ORDER BY hp.fecha_pesaje DESC
+        `;
+
+        const params = rolUsuario === 'admin' ? [chip_animal] : [chip_animal, idUsuario];
+        const [results] = await db.query(query, params);
 
         if (results.length === 0) {
             return res.status(404).json({ error: "No se encontraron pesajes para este chip_animal" });
@@ -248,8 +347,11 @@ router.get('/:chip_animal', async (req, res) => {
     }
 });
 
-router.put('/:id', async (req, res) => {
-    const { id } = req.params;  
+router.put('/:id', verificarToken, adminOUser, async (req, res) => {
+    const { id } = req.params;
+    const rolUsuario = req.usuario.rol;
+    const idUsuario = req.usuario.id;
+
     const { 
         fecha_pesaje, 
         peso_kg, 
@@ -269,11 +371,21 @@ router.put('/:id', async (req, res) => {
 
     try {
         const [pesajeResult] = await db.query(
-            `SELECT * FROM historico_pesaje WHERE id = ?`, [id]
+            `SELECT hp.*, ra.id_usuario 
+             FROM historico_pesaje hp
+             JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
+             WHERE hp.id = ?`, 
+            [id]
         );
 
         if (pesajeResult.length === 0) {
             return res.status(404).json({ error: "Pesaje no encontrado con el ID proporcionado" });
+        }
+
+        if (rolUsuario !== 'admin' && pesajeResult[0].id_usuario !== idUsuario) {
+            return res.status(403).json({ 
+                error: "No tienes permiso para modificar este pesaje" 
+            });
         }
 
         const [updateResult] = await db.query(
@@ -316,8 +428,11 @@ router.put('/:id', async (req, res) => {
     }
 });
 
-router.put('/chip/:chip_animal', async (req, res) => {
+router.put('/chip/:chip_animal', verificarToken, adminOUser, async (req, res) => {
     const { chip_animal } = req.params;
+    const rolUsuario = req.usuario.rol;
+    const idUsuario = req.usuario.id;
+
     const { 
         fecha_pesaje, 
         peso_kg, 
@@ -336,8 +451,24 @@ router.put('/chip/:chip_animal', async (req, res) => {
     }
 
     try {
+        const [animalResult] = await db.query(
+            `SELECT id_usuario FROM registro_animal WHERE chip_animal = ?`,
+            [chip_animal]
+        );
+
+        if (animalResult.length === 0) {
+            return res.status(404).json({ error: "Animal no encontrado" });
+        }
+
+        if (rolUsuario !== 'admin' && animalResult[0].id_usuario !== idUsuario) {
+            return res.status(403).json({ 
+                error: "No tienes permiso para modificar pesajes de este animal" 
+            });
+        }
+
         const [pesajeResult] = await db.query(
-            `SELECT * FROM historico_pesaje WHERE chip_animal = ?`, [chip_animal]
+            `SELECT * FROM historico_pesaje WHERE chip_animal = ?`, 
+            [chip_animal]
         );
 
         if (pesajeResult.length === 0) {
