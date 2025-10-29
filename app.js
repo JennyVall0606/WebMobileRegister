@@ -12,7 +12,7 @@ app.use(cors());
 const { router: authRoutes } = require('./routes/auth');
 app.use('/api', authRoutes);
 
-const usersRoutes = require('./routes/users');
+const usersRoutes = require('./routes/user');
 app.use('/api/usuarios', usersRoutes);
 
 const registerRoutes = require('./routes/register');
