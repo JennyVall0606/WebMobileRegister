@@ -6,6 +6,19 @@ const db = require("../db");
 const { verificarToken } = require("./auth");
 const { soloAdmin } = require("../middlewares/authorization");
 
+const normalizarRol = (rol) => {
+  const mapaRoles = {
+    'admin': 'admin',
+    'administrador': 'admin',
+    'user': 'user',
+    'usuario': 'user',
+    'viewer': 'viewer',
+    'consultor': 'viewer'
+  };
+  
+  return mapaRoles[rol.toLowerCase()] || null;
+};
+
 router.get("/", verificarToken, soloAdmin, async (req, res) => {
   try {
     const usuarios = await Usuario.obtenerTodos();
