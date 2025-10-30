@@ -6,6 +6,9 @@ const db = require("../db");
 const { verificarToken } = require("./auth");
 const { soloAdmin } = require("../middlewares/authorization");
 
+// ============================================
+// FUNCIÓN HELPER: Normalizar roles
+// ============================================
 const normalizarRol = (rol) => {
   const mapaRoles = {
     'admin': 'admin',
@@ -19,6 +22,9 @@ const normalizarRol = (rol) => {
   return mapaRoles[rol.toLowerCase()] || null;
 };
 
+// ============================================
+// GET /api/usuarios - Listar todos los usuarios
+// ============================================
 router.get("/", verificarToken, soloAdmin, async (req, res) => {
   try {
     const usuarios = await Usuario.obtenerTodos();
@@ -42,6 +48,9 @@ router.get("/", verificarToken, soloAdmin, async (req, res) => {
   }
 });
 
+// ============================================
+// GET /api/usuarios/:id - Obtener un usuario específico
+// ============================================
 router.get("/:id", verificarToken, soloAdmin, async (req, res) => {
   const { id } = req.params;
 
@@ -66,6 +75,9 @@ router.get("/:id", verificarToken, soloAdmin, async (req, res) => {
   }
 });
 
+// ============================================
+// GET /api/usuarios/:id/contraseña - Ver contraseña temporal
+// ============================================
 router.get("/:id/contraseña", verificarToken, soloAdmin, async (req, res) => {
   const { id } = req.params;
 
@@ -95,6 +107,9 @@ router.get("/:id/contraseña", verificarToken, soloAdmin, async (req, res) => {
   }
 });
 
+// ============================================
+// POST /api/usuarios - Crear nuevo usuario
+// ============================================
 router.post("/", verificarToken, soloAdmin, async (req, res) => {
   const { correo, contraseña, rol } = req.body;
 
@@ -105,11 +120,17 @@ router.post("/", verificarToken, soloAdmin, async (req, res) => {
     });
   }
 
-  const rolesValidos = ['admin', 'user', 'viewer'];
-  if (!rolesValidos.includes(rol)) {
+  // ⭐ Normalizar el rol (acepta inglés y español)
+  const rolNormalizado = normalizarRol(rol);
+  
+  if (!rolNormalizado) {
     return res.status(400).json({ 
       mensaje: "Rol inválido",
-      rolesPermitidos: rolesValidos
+      rolesPermitidos: [
+        'admin o administrador',
+        'user o usuario', 
+        'viewer o consultor'
+      ]
     });
   }
 
@@ -132,7 +153,7 @@ router.post("/", verificarToken, soloAdmin, async (req, res) => {
     const nuevoUsuario = await Usuario.crear({
       correo,
       contraseña: contraseñaCifrada,
-      rol
+      rol: rolNormalizado  // ⭐ Guardar el rol normalizado
     });
 
     await connection.query(
@@ -161,6 +182,9 @@ router.post("/", verificarToken, soloAdmin, async (req, res) => {
   }
 });
 
+// ============================================
+// PUT /api/usuarios/:id - Actualizar usuario
+// ============================================
 router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
   const { id } = req.params;
   const { correo, contraseña, rol } = req.body;
@@ -177,14 +201,21 @@ router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
       return res.status(404).json({ mensaje: "Usuario no encontrado" });
     }
 
+    // ⭐ Normalizar el rol si se proporciona
+    let rolNormalizado = null;
     if (rol) {
-      const rolesValidos = ['admin', 'user', 'viewer'];
-      if (!rolesValidos.includes(rol)) {
+      rolNormalizado = normalizarRol(rol);
+      
+      if (!rolNormalizado) {
         await connection.rollback();
         connection.release();
         return res.status(400).json({ 
           mensaje: "Rol inválido",
-          rolesPermitidos: rolesValidos
+          rolesPermitidos: [
+            'admin o administrador',
+            'user o usuario', 
+            'viewer o consultor'
+          ]
         });
       }
     }
@@ -192,7 +223,7 @@ router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
     let datosActualizar = {};
     
     if (correo) datosActualizar.correo = correo;
-    if (rol) datosActualizar.rol = rol;
+    if (rolNormalizado) datosActualizar.rol = rolNormalizado;  // ⭐ Usar el rol normalizado
     
     if (contraseña) {
       datosActualizar.contraseña = await bcrypt.hash(contraseña, 10);
@@ -236,6 +267,9 @@ router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
   }
 });
 
+// ============================================
+// DELETE /api/usuarios/:id - Eliminar usuario
+// ============================================
 router.delete("/:id", verificarToken, soloAdmin, async (req, res) => {
   const { id } = req.params;
   const adminId = req.usuario.id;
