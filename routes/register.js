@@ -35,12 +35,17 @@ const upload = multer({ storage: storage });
 // POST /register/add - Crear nuevo animal
 // Admin y User pueden crear
 // ⭐ Viewer NO puede crear (bloqueado)
+// ⭐ Animal se asigna a la FINCA del usuario autenticado
 // ============================================
 router.post("/add", verificarToken, bloquearViewer, upload.single("foto"), async (req, res) => {
   const id_usuario = req.usuario?.id;
+  const finca_id = req.usuario?.finca_id; // ⭐ Obtener finca del usuario
 
-  if (!id_usuario) {
-    return res.status(400).json({ error: "Usuario no autenticado" });
+  if (!id_usuario || !finca_id) {
+    return res.status(400).json({ 
+      error: "Usuario no autenticado o sin finca asignada",
+      detalle: "El usuario debe tener una finca asignada para registrar animales"
+    });
   }
 
   let {
@@ -62,7 +67,7 @@ router.post("/add", verificarToken, bloquearViewer, upload.single("foto"), async
   } = req.body;
 
   console.log("📥 Datos recibidos:", { chip_animal, peso_nacimiento, fecha_nacimiento, raza_id_raza });
-  console.log("👤 Usuario creando:", req.usuario.correo, "- Rol:", req.usuario.rol);
+  console.log("👤 Usuario creando:", req.usuario.correo, "- Rol:", req.usuario.rol, "- Finca:", finca_id);
 
   if (!req.file) {
     return res.status(400).json({ error: "No se subió una foto" });
@@ -89,16 +94,16 @@ router.post("/add", verificarToken, bloquearViewer, upload.single("foto"), async
   try {
     await connection.beginTransaction();
 
-    // Verificar chip duplicado
+    // Verificar chip duplicado EN LA MISMA FINCA
     const [existingChip] = await connection.query(
-      `SELECT * FROM registro_animal WHERE chip_animal = ?`,
-      [chip_animal]
+      `SELECT * FROM registro_animal WHERE chip_animal = ? AND finca_id = ?`,
+      [chip_animal, finca_id]
     );
 
     if (existingChip.length > 0) {
       await connection.rollback();
       connection.release();
-      return res.status(400).json({ error: "El chip ya está registrado" });
+      return res.status(400).json({ error: "El chip ya está registrado en esta finca" });
     }
 
     // Validar raza
@@ -112,19 +117,19 @@ router.post("/add", verificarToken, bloquearViewer, upload.single("foto"), async
       raza_id_raza = 25;
     }
 
-    // ⭐ Insertar animal con el id_usuario del que lo está creando
+    // ⭐ Insertar animal con finca_id (sin id_usuario)
     const queryInsert = `
       INSERT INTO registro_animal 
-      (foto, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones, id_usuario, procedencia, hierro, categoria, ubicacion, numero_parto, precocidad, tipo_monta, created_at) 
+      (foto, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento, id_madre, id_padre, enfermedades, observaciones, finca_id, procedencia, hierro, categoria, ubicacion, numero_parto, precocidad, tipo_monta, created_at) 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
 
     const values = [
       fotoPrincipal, chip_animal, peso_nacimiento, raza_id_raza, fecha_nacimiento,
-      id_madre, id_padre, enfermedades, observaciones, id_usuario, procedencia,
+      id_madre, id_padre, enfermedades, observaciones, finca_id, procedencia,
       hierro, categoria, ubicacion, numero_parto, precocidad, tipo_monta,
     ];
 
-    console.log("📤 Insertando animal para usuario ID:", id_usuario);
+    console.log("📤 Insertando animal para finca ID:", finca_id);
     const [result] = await connection.query(queryInsert, values);
     const registro_animal_id = result.insertId;
     
@@ -164,7 +169,8 @@ router.post("/add", verificarToken, bloquearViewer, upload.single("foto"), async
       message: "Animal registrado con éxito", 
       id: registro_animal_id,
       peso_inicial_id: pesoResult.insertId,
-      propietario: req.usuario.correo
+      finca_id: finca_id,
+      registrado_por: req.usuario.correo
     });
 
   } catch (error) {
@@ -182,41 +188,34 @@ router.post("/add", verificarToken, bloquearViewer, upload.single("foto"), async
 
 // ============================================
 // DELETE /register/delete/:chip_animal - Eliminar animal
-// Admin puede eliminar cualquiera
-// User solo puede eliminar los suyos
+// Admin puede eliminar cualquiera DE SU FINCA
+// User solo puede eliminar los de SU FINCA
 // ⭐ Viewer NO puede eliminar (bloqueado)
 // ============================================
 router.delete("/delete/:chip_animal", verificarToken, bloquearViewer, async (req, res) => {
   const { chip_animal } = req.params;
   const rolUsuario = req.usuario.rol;
-  const idUsuario = req.usuario.id;
+  const finca_id = req.usuario.finca_id;
 
-  console.log("🗑️ Intentando eliminar chip:", chip_animal, "- Usuario:", req.usuario.correo);
+  console.log("🗑️ Intentando eliminar chip:", chip_animal, "- Usuario:", req.usuario.correo, "- Finca:", finca_id);
 
   try {
-    // Buscar el animal
+    // Buscar el animal EN LA FINCA del usuario
     const [animal] = await db.query(
-      `SELECT * FROM registro_animal WHERE chip_animal = ?`,
-      [chip_animal]
+      `SELECT * FROM registro_animal WHERE chip_animal = ? AND finca_id = ?`,
+      [chip_animal, finca_id]
     );
 
     if (animal.length === 0) {
-      return res.status(404).json({ error: "Animal no encontrado" });
-    }
-
-    // ⭐ Verificar permisos: Admin puede todo, User solo lo suyo
-    if (rolUsuario !== 'admin' && animal[0].id_usuario !== idUsuario) {
-      console.log("❌ Permiso denegado - Propietario:", animal[0].id_usuario, "- Solicitante:", idUsuario);
-      return res.status(403).json({ 
-        error: "No tienes permiso para eliminar este animal",
-        detalle: "Solo puedes eliminar tus propios animales"
+      return res.status(404).json({ 
+        error: "Animal no encontrado en tu finca" 
       });
     }
 
     // Eliminar animal
     await db.query(
-      `DELETE FROM registro_animal WHERE chip_animal = ?`,
-      [chip_animal]
+      `DELETE FROM registro_animal WHERE chip_animal = ? AND finca_id = ?`,
+      [chip_animal, finca_id]
     );
 
     console.log("✅ Animal eliminado exitosamente");
@@ -233,36 +232,42 @@ router.delete("/delete/:chip_animal", verificarToken, bloquearViewer, async (req
 
 // ============================================
 // GET /register/all - Listar todos los animales
-// Admin ve TODOS los animales
-// User y Viewer solo ven SUS animales
+// ⭐ Todos los roles ven SOLO los animales de SU FINCA
 // ============================================
 router.get("/all", verificarToken, cualquierUsuario, async (req, res) => {
   const rolUsuario = req.usuario.rol;
-  const idUsuario = req.usuario.id;
+  const finca_id = req.usuario.finca_id;
 
-  console.log("📋 Listando animales - Usuario:", req.usuario.correo, "- Rol:", rolUsuario);
+  console.log("📋 Listando animales - Usuario:", req.usuario.correo, "- Rol:", rolUsuario, "- Finca:", finca_id);
+
+  if (!finca_id) {
+    return res.status(400).json({ 
+      error: "Usuario sin finca asignada",
+      detalle: "Contacta al administrador para que te asigne una finca"
+    });
+  }
 
   try {
-    let query;
-    let params = [];
+    // ⭐ TODOS ven solo los animales de SU finca
+    const query = `
+      SELECT 
+        ra.*,
+        r.nombre_raza,
+        f.nombre as finca_nombre
+      FROM registro_animal ra
+      LEFT JOIN raza r ON ra.raza_id_raza = r.id_raza
+      LEFT JOIN fincas f ON ra.finca_id = f.id
+      WHERE ra.finca_id = ?
+      ORDER BY ra.id DESC
+    `;
+    
+    const [results] = await db.query(query, [finca_id]);
 
-    if (rolUsuario === 'admin') {
-      // ⭐ Admin ve TODOS los animales
-      query = `SELECT * FROM vista_registro_animal ORDER BY id DESC`;
-      console.log("🔓 Admin - Mostrando todos los animales");
-    } else {
-      // ⭐ User y Viewer solo ven SUS animales
-      query = `SELECT * FROM vista_registro_animal WHERE id_usuario = ? ORDER BY id DESC`;
-      params = [idUsuario];
-      console.log("🔒 User/Viewer - Filtrando por usuario ID:", idUsuario);
-    }
-
-    const [results] = await db.query(query, params);
-
-    console.log(`✅ ${results.length} animales encontrados`);
+    console.log(`✅ ${results.length} animales encontrados en finca ${finca_id}`);
 
     res.status(200).json({
       total: results.length,
+      finca_id: finca_id,
       animales: results
     });
   } catch (err) {
@@ -273,35 +278,38 @@ router.get("/all", verificarToken, cualquierUsuario, async (req, res) => {
 
 // ============================================
 // GET /register/animal/:chip_animal - Obtener un animal específico
-// Admin puede ver cualquier animal
-// User y Viewer solo pueden ver SUS animales
+// ⭐ Solo se puede ver si pertenece a la finca del usuario
 // ============================================
 router.get("/animal/:chip_animal", verificarToken, cualquierUsuario, async (req, res) => {
   const { chip_animal } = req.params;
-  const rolUsuario = req.usuario.rol;
-  const idUsuario = req.usuario.id;
+  const finca_id = req.usuario.finca_id;
 
-  console.log("🔍 Buscando animal:", chip_animal, "- Usuario:", req.usuario.correo);
+  console.log("🔍 Buscando animal:", chip_animal, "- Finca:", finca_id);
+
+  if (!finca_id) {
+    return res.status(400).json({ 
+      error: "Usuario sin finca asignada" 
+    });
+  }
 
   try {
-    let query;
-    let params;
-
-    if (rolUsuario === 'admin') {
-      // ⭐ Admin puede ver cualquier animal
-      query = `SELECT * FROM vista_registro_animal WHERE chip_animal = ?`;
-      params = [chip_animal];
-    } else {
-      // ⭐ User/Viewer solo pueden ver sus propios animales
-      query = `SELECT * FROM vista_registro_animal WHERE chip_animal = ? AND id_usuario = ?`;
-      params = [chip_animal, idUsuario];
-    }
-
-    const [results] = await db.query(query, params);
+    // ⭐ Solo buscar en la finca del usuario
+    const query = `
+      SELECT 
+        ra.*,
+        r.nombre_raza,
+        f.nombre as finca_nombre
+      FROM registro_animal ra
+      LEFT JOIN raza r ON ra.raza_id_raza = r.id_raza
+      LEFT JOIN fincas f ON ra.finca_id = f.id
+      WHERE ra.chip_animal = ? AND ra.finca_id = ?
+    `;
+    
+    const [results] = await db.query(query, [chip_animal, finca_id]);
 
     if (results.length === 0) {
       return res.status(404).json({ 
-        error: "Animal no encontrado o no tienes permiso para verlo" 
+        error: "Animal no encontrado en tu finca" 
       });
     }
 
@@ -315,16 +323,20 @@ router.get("/animal/:chip_animal", verificarToken, cualquierUsuario, async (req,
 
 // ============================================
 // PUT /register/update/:chip_animal - Actualizar animal
-// Admin puede actualizar cualquier animal
-// User solo puede actualizar SUS animales
+// Admin y User pueden actualizar animales de SU FINCA
 // ⭐ Viewer NO puede actualizar (bloqueado)
 // ============================================
 router.put("/update/:chip_animal", verificarToken, bloquearViewer, upload.single("foto"), async (req, res) => {
   const chip_animal_original = req.params.chip_animal;
-  const rolUsuario = req.usuario.rol;
-  const idUsuario = req.usuario.id;
+  const finca_id = req.usuario.finca_id;
 
-  console.log("📝 Actualizando animal:", chip_animal_original, "- Usuario:", req.usuario.correo);
+  console.log("📝 Actualizando animal:", chip_animal_original, "- Finca:", finca_id);
+
+  if (!finca_id) {
+    return res.status(400).json({ 
+      error: "Usuario sin finca asignada" 
+    });
+  }
 
   const {
     chip_animal = req.body.chip_animal,
@@ -345,22 +357,15 @@ router.put("/update/:chip_animal", verificarToken, bloquearViewer, upload.single
   } = req.body;
 
   try {
-    // Buscar el animal
+    // Buscar el animal EN LA FINCA del usuario
     const [existingRecord] = await db.query(
-      `SELECT * FROM registro_animal WHERE chip_animal = ?`,
-      [chip_animal_original]
+      `SELECT * FROM registro_animal WHERE chip_animal = ? AND finca_id = ?`,
+      [chip_animal_original, finca_id]
     );
 
     if (existingRecord.length === 0) {
-      return res.status(404).json({ error: "Animal no encontrado" });
-    }
-
-    // ⭐ Verificar permisos: Admin puede todo, User solo lo suyo
-    if (rolUsuario !== 'admin' && existingRecord[0].id_usuario !== idUsuario) {
-      console.log("❌ Permiso denegado - Propietario:", existingRecord[0].id_usuario, "- Solicitante:", idUsuario);
-      return res.status(403).json({ 
-        error: "No tienes permiso para modificar este animal",
-        detalle: "Solo puedes modificar tus propios animales"
+      return res.status(404).json({ 
+        error: "Animal no encontrado en tu finca" 
       });
     }
 
@@ -468,14 +473,15 @@ router.put("/update/:chip_animal", verificarToken, bloquearViewer, upload.single
     const queryUpdate = `
       UPDATE registro_animal 
       SET ${setClauses.join(", ")} 
-      WHERE chip_animal = ?`;
+      WHERE chip_animal = ? AND finca_id = ?`;
 
     values.push(chip_animal_original);
+    values.push(finca_id); // ⭐ Agregar finca_id al WHERE
 
     const [result] = await db.query(queryUpdate, values);
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Animal no encontrado" });
+      return res.status(404).json({ error: "Animal no encontrado en tu finca" });
     }
 
     // Actualizar peso inicial

@@ -7,27 +7,30 @@ const db = require("../db");
 
 // ============================================
 // 🔐 Generar ambos tokens (acceso + refresh)
+// ⭐ ACTUALIZADO: Ahora incluye finca_id
 // ============================================
 const generarTokens = (usuario) => {
   const accessToken = jwt.sign(
     {
       id: usuario.id || usuario.id_usuario,
       correo: usuario.correo,
-      rol: usuario.rol  // ⭐ IMPORTANTE: Incluir el rol
+      rol: usuario.rol,
+      finca_id: usuario.finca_id  // ⭐ AGREGADO
     },
     process.env.JWT_SECRET || 'clave_secreta',
-    { expiresIn: '1h' }  // Token de acceso: 1 hora
+    { expiresIn: '1h' }
   );
 
   const refreshToken = jwt.sign(
     {
       id: usuario.id || usuario.id_usuario,
       correo: usuario.correo,
-      rol: usuario.rol,  // ⭐ IMPORTANTE: Incluir el rol también aquí
+      rol: usuario.rol,
+      finca_id: usuario.finca_id,  // ⭐ AGREGADO
       tipo: 'refresh'
     },
     process.env.JWT_REFRESH_SECRET || 'clave_secreta_refresh',
-    { expiresIn: '30d' }  // Token de refresco: 30 días
+    { expiresIn: '30d' }
   );
 
   return { accessToken, refreshToken };
@@ -35,6 +38,7 @@ const generarTokens = (usuario) => {
 
 // ============================================
 // 🔒 Middleware de autenticación
+// ⭐ ACTUALIZADO: Ahora extrae finca_id del token
 // ============================================
 const verificarToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
@@ -59,14 +63,15 @@ const verificarToken = (req, res, next) => {
       process.env.JWT_SECRET || "clave_secreta"
     );
     
-    // ⭐ IMPORTANTE: Asegurar que el usuario tenga todos los datos necesarios
+    // ⭐ ACTUALIZADO: Incluir finca_id
     req.usuario = {
       id: decodificado.id,
       correo: decodificado.correo,
-      rol: decodificado.rol  // ⭐ El rol debe estar aquí
+      rol: decodificado.rol,
+      finca_id: decodificado.finca_id  // ⭐ AGREGADO
     };
 
-    console.log("✅ Token válido - Usuario:", req.usuario.correo, "- Rol:", req.usuario.rol);
+    console.log("✅ Token válido - Usuario:", req.usuario.correo, "- Rol:", req.usuario.rol, "- Finca:", req.usuario.finca_id);
     next();
     
   } catch (error) {
@@ -85,7 +90,6 @@ router.post("/registroUser", async (req, res) => {
     return res.status(400).json({ mensaje: "Todos los campos son obligatorios" });
   }
 
-  // ⭐ Validar roles permitidos
   const rolesPermitidos = ['admin', 'user', 'viewer'];
   if (!rolesPermitidos.includes(rol.toLowerCase())) {
     return res.status(400).json({ 
@@ -124,6 +128,7 @@ router.post("/registroUser", async (req, res) => {
 
 // ============================================
 // 🔑 Login - Autenticación de usuario
+// ⭐ ACTUALIZADO: Ahora devuelve finca_id en el token
 // ============================================
 router.post("/login", async (req, res) => {
   const { correo, contraseña } = req.body;
@@ -149,18 +154,19 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ mensaje: "Credenciales incorrectas" });
     }
 
-    console.log("✅ Login exitoso - Usuario:", usuario.correo, "- Rol:", usuario.rol);
+    console.log("✅ Login exitoso - Usuario:", usuario.correo, "- Rol:", usuario.rol, "- Finca:", usuario.finca_id);
 
-    // 🔥 Generar ambos tokens
+    // 🔥 Generar ambos tokens (ahora incluyen finca_id)
     const { accessToken, refreshToken } = generarTokens(usuario);
     
     return res.json({ 
-      token: accessToken,           // Token principal (1 hora)
-      refreshToken: refreshToken,   // Token de refresco (30 días)
+      token: accessToken,
+      refreshToken: refreshToken,
       usuario: {
         id: usuario.id || usuario.id_usuario,
         correo: usuario.correo,
-        rol: usuario.rol  // ⭐ Incluir el rol en la respuesta
+        rol: usuario.rol,
+        finca_id: usuario.finca_id  // ⭐ AGREGADO
       }
     });
   } catch (error) {
@@ -171,6 +177,7 @@ router.post("/login", async (req, res) => {
 
 // ============================================
 // 🔄 Refresh token - Renovar token de acceso
+// ⭐ ACTUALIZADO: Nuevos tokens incluyen finca_id
 // ============================================
 router.post("/refresh", async (req, res) => {
   const { refreshToken } = req.body;
@@ -182,7 +189,6 @@ router.post("/refresh", async (req, res) => {
   try {
     console.log("🔄 Intentando refrescar token...");
 
-    // Verificar el refresh token
     const decoded = jwt.verify(
       refreshToken,
       process.env.JWT_REFRESH_SECRET || 'clave_secreta_refresh'
@@ -194,17 +200,15 @@ router.post("/refresh", async (req, res) => {
 
     console.log("✅ Refresh token válido para:", decoded.correo);
 
-    // Buscar usuario actualizado en la BD (por si cambió el rol)
     const usuario = await Usuario.buscarPorCorreo(decoded.correo);
     
     if (!usuario) {
       return res.status(404).json({ mensaje: "Usuario no encontrado" });
     }
 
-    // Generar nuevos tokens con el rol actualizado
     const { accessToken, refreshToken: newRefreshToken } = generarTokens(usuario);
 
-    console.log("✅ Nuevos tokens generados para:", usuario.correo, "- Rol:", usuario.rol);
+    console.log("✅ Nuevos tokens generados para:", usuario.correo, "- Rol:", usuario.rol, "- Finca:", usuario.finca_id);
 
     return res.json({ 
       token: accessToken,
@@ -212,7 +216,8 @@ router.post("/refresh", async (req, res) => {
       usuario: {
         id: usuario.id,
         correo: usuario.correo,
-        rol: usuario.rol  // ⭐ Devolver el rol actualizado
+        rol: usuario.rol,
+        finca_id: usuario.finca_id  // ⭐ AGREGADO
       }
     });
 
@@ -234,27 +239,33 @@ router.get("/protegida", verificarToken, (req, res) => {
 
 // ============================================
 // ✅ Obtener animales del usuario autenticado
+// ⭐ ACTUALIZADO: Ahora filtra por finca_id
 // ============================================
 router.get("/mis-animales", verificarToken, async (req, res) => {
-  const usuarioId = req.usuario.id;
+  const finca_id = req.usuario.finca_id;
   const rolUsuario = req.usuario.rol;
 
   try {
     let query;
     let params = [];
 
-    // Admin ve todos los animales, otros solo los suyos
     if (rolUsuario === 'admin') {
-      query = "SELECT * FROM vista_registro_animal";
+      if (finca_id) {
+        query = "SELECT * FROM registro_animal WHERE finca_id = ?";
+        params = [finca_id];
+      } else {
+        query = "SELECT * FROM registro_animal";
+      }
     } else {
-      query = "SELECT * FROM vista_registro_animal WHERE id_usuario = ?";
-      params = [usuarioId];
+      query = "SELECT * FROM registro_animal WHERE finca_id = ?";
+      params = [finca_id];
     }
 
     const [animales] = await db.query(query, params);
 
     res.json({
       total: animales.length,
+      finca_id: finca_id,
       animales: animales
     });
   } catch (error) {
@@ -264,7 +275,7 @@ router.get("/mis-animales", verificarToken, async (req, res) => {
 }); 
 
 // ============================================
-// 📊 NUEVA RUTA: Obtener perfil del usuario actual
+// 📊 Obtener perfil del usuario actual
 // ============================================
 router.get("/perfil", verificarToken, async (req, res) => {
   try {
@@ -278,6 +289,7 @@ router.get("/perfil", verificarToken, async (req, res) => {
       id: usuario.id,
       correo: usuario.correo,
       rol: usuario.rol,
+      finca_id: usuario.finca_id,
       creado_en: usuario.creado_en
     });
   } catch (error) {
