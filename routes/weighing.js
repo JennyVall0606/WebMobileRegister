@@ -2,9 +2,24 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { verificarToken } = require('./auth');
-const { adminOUser, cualquierUsuario } = require('../middlewares/authorization');
+const { adminOUser, cualquierUsuario, bloquearViewer } = require('../middlewares/authorization');
 
-router.post('/add', verificarToken, adminOUser, async (req, res) => {
+// ============================================
+// POST /weighing/add - Crear nuevo pesaje
+// Admin y User pueden crear
+// ⭐ Viewer NO puede crear (bloqueado)
+// ⭐ Pesaje se asigna a un animal de la FINCA del usuario
+// ============================================
+router.post('/add', verificarToken, bloquearViewer, async (req, res) => {
+    const finca_id = req.usuario?.finca_id;
+
+    if (!finca_id) {
+        return res.status(400).json({ 
+            error: "Usuario sin finca asignada",
+            detalle: "El usuario debe tener una finca asignada"
+        });
+    }
+
     const { 
         chip_animal, 
         fecha_pesaje, 
@@ -20,31 +35,25 @@ router.post('/add', verificarToken, adminOUser, async (req, res) => {
         tiempo_meses
     } = req.body;
 
-    const rolUsuario = req.usuario.rol;
-    const idUsuario = req.usuario.id;
+    console.log("📥 Datos recibidos:", { chip_animal, fecha_pesaje, peso_kg });
+    console.log("👤 Usuario registrando:", req.usuario.correo, "- Finca:", finca_id);
 
     if (!chip_animal || !fecha_pesaje || !peso_kg) {
         return res.status(400).json({ error: "Los campos chip_animal, fecha_pesaje y peso_kg son obligatorios" });
     }
 
     try {
+        // ⭐ Buscar el animal EN LA FINCA del usuario
         const [checkResult] = await db.query(
-            `SELECT id, id_usuario FROM registro_animal WHERE chip_animal = ?`, 
-            [chip_animal]
+            `SELECT id, finca_id FROM registro_animal WHERE chip_animal = ? AND finca_id = ?`, 
+            [chip_animal, finca_id]
         );
 
         if (checkResult.length === 0) {
-            return res.status(404).json({ error: "El chip_animal no está registrado" });
+            return res.status(404).json({ error: "El chip_animal no está registrado en tu finca" });
         }
 
         const registro_animal_id = checkResult[0].id;
-        const id_usuario_animal = checkResult[0].id_usuario;
-
-        if (rolUsuario !== 'admin' && id_usuario_animal !== idUsuario) {
-            return res.status(403).json({ 
-                error: "No tienes permiso para registrar pesajes en este animal" 
-            });
-        }
 
         const tipoSeguimientoValido = ['compra', 'venta', 'seguimiento', 'nacimiento'].includes(tipo_seguimiento) 
             ? tipo_seguimiento 
@@ -83,18 +92,37 @@ router.post('/add', verificarToken, adminOUser, async (req, res) => {
             ]
         );
 
-        res.status(201).json({ message: "Pesaje agregado correctamente", id: insertResult.insertId });
+        console.log("✅ Pesaje registrado con ID:", insertResult.insertId);
+
+        res.status(201).json({ 
+            message: "Pesaje agregado correctamente", 
+            id: insertResult.insertId,
+            chip_animal: chip_animal,
+            registrado_por: req.usuario.correo
+        });
 
     } catch (err) {
-        console.error("Error al agregar el pesaje:", err);
-        res.status(500).json({ error: "Error al agregar el pesaje" });
+        console.error("❌ Error al agregar el pesaje:", err);
+        res.status(500).json({ 
+            error: "Error al agregar el pesaje",
+            details: err.message
+        });
     }
 });
 
+// ============================================
+// GET /weighing/compra/:chip_animal - Obtener datos de compra
+// ⭐ Solo si el animal pertenece a la finca del usuario
+// ============================================
 router.get('/compra/:chip_animal', verificarToken, cualquierUsuario, async (req, res) => {
     const { chip_animal } = req.params;
-    const rolUsuario = req.usuario.rol;
-    const idUsuario = req.usuario.id;
+    const finca_id = req.usuario.finca_id;
+
+    if (!finca_id) {
+        return res.status(400).json({ 
+            error: "Usuario sin finca asignada" 
+        });
+    }
 
     try {
         let query = `
@@ -109,14 +137,13 @@ router.get('/compra/:chip_animal', verificarToken, cualquierUsuario, async (req,
             FROM historico_pesaje hp
             JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
             WHERE hp.chip_animal = ? 
+            AND ra.finca_id = ?
             AND hp.tipo_seguimiento = 'compra'
-            ${rolUsuario !== 'admin' ? 'AND ra.id_usuario = ?' : ''}
             ORDER BY hp.fecha_pesaje DESC 
             LIMIT 1
         `;
 
-        const params = rolUsuario === 'admin' ? [chip_animal] : [chip_animal, idUsuario];
-        let [results] = await db.query(query, params);
+        let [results] = await db.query(query, [chip_animal, finca_id]);
 
         if (results.length === 0) {
             query = `
@@ -131,46 +158,47 @@ router.get('/compra/:chip_animal', verificarToken, cualquierUsuario, async (req,
                 FROM historico_pesaje hp
                 JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
                 WHERE hp.chip_animal = ? 
+                AND ra.finca_id = ?
                 AND hp.costo_compra IS NOT NULL
-                ${rolUsuario !== 'admin' ? 'AND ra.id_usuario = ?' : ''}
                 ORDER BY hp.fecha_pesaje ASC 
                 LIMIT 1
             `;
 
-            [results] = await db.query(query, params);
+            [results] = await db.query(query, [chip_animal, finca_id]);
         }
 
         if (results.length === 0) {
-            return res.status(404).json({ error: "No se encontró un registro de compra para este animal" });
+            return res.status(404).json({ error: "No se encontró un registro de compra para este animal en tu finca" });
         }
 
         res.json(results[0]);
 
     } catch (err) {
-        console.error("Error al obtener datos de compra:", err);
+        console.error("❌ Error al obtener datos de compra:", err);
         res.status(500).json({ error: "Error al obtener datos de compra" });
     }
 });
 
-router.delete('/delete/:chip_animal', verificarToken, adminOUser, async (req, res) => {
+// ============================================
+// DELETE /weighing/delete/:chip_animal - Eliminar pesajes
+// Admin y User pueden eliminar de SU FINCA
+// ⭐ Viewer NO puede eliminar (bloqueado)
+// ============================================
+router.delete('/delete/:chip_animal', verificarToken, bloquearViewer, async (req, res) => {
     const { chip_animal } = req.params;
-    const rolUsuario = req.usuario.rol;
-    const idUsuario = req.usuario.id;
+    const finca_id = req.usuario.finca_id;
+
+    console.log("🗑️ Intentando eliminar pesajes del chip:", chip_animal, "- Finca:", finca_id);
 
     try {
+        // ⭐ Verificar que el animal pertenezca a la finca del usuario
         const [checkAnimal] = await db.query(
-            `SELECT id_usuario FROM registro_animal WHERE chip_animal = ?`,
-            [chip_animal]
+            `SELECT finca_id FROM registro_animal WHERE chip_animal = ? AND finca_id = ?`,
+            [chip_animal, finca_id]
         );
 
         if (checkAnimal.length === 0) {
-            return res.status(404).json({ error: "Animal no encontrado" });
-        }
-
-        if (rolUsuario !== 'admin' && checkAnimal[0].id_usuario !== idUsuario) {
-            return res.status(403).json({ 
-                error: "No tienes permiso para eliminar pesajes de este animal" 
-            });
+            return res.status(404).json({ error: "Animal no encontrado en tu finca" });
         }
 
         const [checkResult] = await db.query(
@@ -184,100 +212,98 @@ router.delete('/delete/:chip_animal', verificarToken, adminOUser, async (req, re
 
         await db.query(`DELETE FROM historico_pesaje WHERE chip_animal = ?`, [chip_animal]);
 
-        res.json({ message: "Pesaje eliminado correctamente" });
+        console.log("✅ Pesajes eliminados exitosamente");
+
+        res.json({ 
+            message: "Pesaje(s) eliminado(s) correctamente",
+            eliminados: checkResult.length
+        });
 
     } catch (err) {
-        console.error("Error al eliminar el pesaje:", err);
+        console.error("❌ Error al eliminar el pesaje:", err);
         res.status(500).json({ error: "Error al eliminar el pesaje" });
     }
 });
 
+// ============================================
+// GET /weighing/all - Listar todos los pesajes
+// ⭐ Todos ven SOLO los pesajes de animales de SU FINCA
+// ============================================
 router.get('/all', verificarToken, cualquierUsuario, async (req, res) => {
-    const rolUsuario = req.usuario.rol;
-    const idUsuario = req.usuario.id;
+    const finca_id = req.usuario.finca_id;
+
+    console.log("📋 Listando pesajes - Usuario:", req.usuario.correo, "- Finca:", finca_id);
+
+    if (!finca_id) {
+        return res.status(400).json({ 
+            error: "Usuario sin finca asignada" 
+        });
+    }
 
     try {
-        let query;
-        let params = [];
+        // ⭐ Solo ver pesajes de animales de SU finca
+        const query = `
+            SELECT hp.* 
+            FROM historico_pesaje hp
+            JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
+            WHERE ra.finca_id = ?
+            ORDER BY hp.fecha_pesaje DESC
+        `;
 
-        if (rolUsuario === 'admin') {
-            query = `SELECT * FROM vista_historico_pesaje`;
-        } else {
-            query = `
-                SELECT vhp.* 
-                FROM vista_historico_pesaje vhp
-                JOIN registro_animal ra ON vhp.chip_animal = ra.chip_animal
-                WHERE ra.id_usuario = ?
-            `;
-            params = [idUsuario];
-        }
+        const [results] = await db.query(query, [finca_id]);
 
-        const [results] = await db.query(query, params);
-        res.json(results);
+        console.log(`✅ ${results.length} pesajes encontrados`);
+
+        res.json({
+            total: results.length,
+            finca_id: finca_id,
+            pesajes: results
+        });
     } catch (err) {
-        console.error("Error al obtener los pesajes:", err);
+        console.error("❌ Error al obtener los pesajes:", err);
         res.status(500).json({ error: "Error al obtener los pesajes" });
     }
 });
 
+// ============================================
+// GET /weighing/historico-pesaje - Histórico detallado
+// ⭐ Solo pesajes de animales de SU FINCA
+// ============================================
 router.get('/historico-pesaje', verificarToken, cualquierUsuario, async (req, res) => {
-    const rolUsuario = req.usuario.rol;
-    const idUsuario = req.usuario.id;
+    const finca_id = req.usuario.finca_id;
+
+    if (!finca_id) {
+        return res.status(400).json({ 
+            error: "Usuario sin finca asignada" 
+        });
+    }
 
     try {
-        let query;
-        let params = [];
-
-        if (rolUsuario === 'admin') {
-            query = `
-                SELECT 
-                    id, 
-                    fecha_pesaje, 
-                    chip_animal, 
-                    peso_kg, 
-                    costo_compra, 
-                    costo_venta, 
-                    precio_kg_compra, 
-                    precio_kg_venta,
-                    CASE 
-                        WHEN tipo_seguimiento IS NULL AND costo_compra IS NULL AND costo_venta IS NULL 
-                        THEN 'nacimiento'
-                        ELSE tipo_seguimiento
-                    END as tipo_seguimiento,
-                    ganancia_peso,
-                    ganancia_valor,
-                    tiempo_meses
-                FROM historico_pesaje
-                ORDER BY fecha_pesaje DESC
-            `;
-        } else {
-            query = `
-                SELECT 
-                    hp.id, 
-                    hp.fecha_pesaje, 
-                    hp.chip_animal, 
-                    hp.peso_kg, 
-                    hp.costo_compra, 
-                    hp.costo_venta, 
-                    hp.precio_kg_compra, 
-                    hp.precio_kg_venta,
-                    CASE 
-                        WHEN hp.tipo_seguimiento IS NULL AND hp.costo_compra IS NULL AND hp.costo_venta IS NULL 
-                        THEN 'nacimiento'
-                        ELSE hp.tipo_seguimiento
-                    END as tipo_seguimiento,
-                    hp.ganancia_peso,
-                    hp.ganancia_valor,
-                    hp.tiempo_meses
-                FROM historico_pesaje hp
-                JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
-                WHERE ra.id_usuario = ?
-                ORDER BY hp.fecha_pesaje DESC
-            `;
-            params = [idUsuario];
-        }
+        const query = `
+            SELECT 
+                hp.id, 
+                hp.fecha_pesaje, 
+                hp.chip_animal, 
+                hp.peso_kg, 
+                hp.costo_compra, 
+                hp.costo_venta, 
+                hp.precio_kg_compra, 
+                hp.precio_kg_venta,
+                CASE 
+                    WHEN hp.tipo_seguimiento IS NULL AND hp.costo_compra IS NULL AND hp.costo_venta IS NULL 
+                    THEN 'nacimiento'
+                    ELSE hp.tipo_seguimiento
+                END as tipo_seguimiento,
+                hp.ganancia_peso,
+                hp.ganancia_valor,
+                hp.tiempo_meses
+            FROM historico_pesaje hp
+            JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
+            WHERE ra.finca_id = ?
+            ORDER BY hp.fecha_pesaje DESC
+        `;
         
-        const [rows] = await db.query(query, params);
+        const [rows] = await db.query(query, [finca_id]);
         
         if (rows.length === 0) {
             return res.status(404).json({ error: 'No se encontraron registros de pesaje' });
@@ -300,18 +326,27 @@ router.get('/historico-pesaje', verificarToken, cualquierUsuario, async (req, re
   
         res.json(response);
     } catch (error) {
-        console.error('Error al obtener histórico:', error);
+        console.error('❌ Error al obtener histórico:', error);
         res.status(500).json({ message: 'Error interno del servidor' });
     }
 });
 
+// ============================================
+// GET /weighing/:chip_animal - Pesajes de un animal específico
+// ⭐ Solo si el animal pertenece a la finca del usuario
+// ============================================
 router.get('/:chip_animal', verificarToken, cualquierUsuario, async (req, res) => {
     const { chip_animal } = req.params;
-    const rolUsuario = req.usuario.rol;
-    const idUsuario = req.usuario.id;
+    const finca_id = req.usuario.finca_id;
+
+    if (!finca_id) {
+        return res.status(400).json({ 
+            error: "Usuario sin finca asignada" 
+        });
+    }
 
     try {
-        let query = `
+        const query = `
             SELECT 
                 hp.id, 
                 hp.fecha_pesaje, 
@@ -327,30 +362,32 @@ router.get('/:chip_animal', verificarToken, cualquierUsuario, async (req, res) =
                 hp.tiempo_meses
             FROM historico_pesaje hp
             JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
-            WHERE hp.chip_animal = ?
-            ${rolUsuario !== 'admin' ? 'AND ra.id_usuario = ?' : ''}
+            WHERE hp.chip_animal = ? AND ra.finca_id = ?
             ORDER BY hp.fecha_pesaje DESC
         `;
 
-        const params = rolUsuario === 'admin' ? [chip_animal] : [chip_animal, idUsuario];
-        const [results] = await db.query(query, params);
+        const [results] = await db.query(query, [chip_animal, finca_id]);
 
         if (results.length === 0) {
-            return res.status(404).json({ error: "No se encontraron pesajes para este chip_animal" });
+            return res.status(404).json({ error: "No se encontraron pesajes para este chip_animal en tu finca" });
         }
 
         res.json(results);
 
     } catch (err) {
-        console.error("Error al obtener el pesaje:", err);
+        console.error("❌ Error al obtener el pesaje:", err);
         res.status(500).json({ error: "Error al obtener el pesaje" });
     }
 });
 
-router.put('/:id', verificarToken, adminOUser, async (req, res) => {
+// ============================================
+// PUT /weighing/:id - Actualizar pesaje por ID
+// Admin y User pueden actualizar de SU FINCA
+// ⭐ Viewer NO puede actualizar (bloqueado)
+// ============================================
+router.put('/:id', verificarToken, bloquearViewer, async (req, res) => {
     const { id } = req.params;
-    const rolUsuario = req.usuario.rol;
-    const idUsuario = req.usuario.id;
+    const finca_id = req.usuario.finca_id;
 
     const { 
         fecha_pesaje, 
@@ -370,22 +407,17 @@ router.put('/:id', verificarToken, adminOUser, async (req, res) => {
     }
 
     try {
+        // ⭐ Verificar que el pesaje pertenezca a un animal de SU finca
         const [pesajeResult] = await db.query(
-            `SELECT hp.*, ra.id_usuario 
+            `SELECT hp.*, ra.finca_id 
              FROM historico_pesaje hp
              JOIN registro_animal ra ON hp.chip_animal = ra.chip_animal
-             WHERE hp.id = ?`, 
-            [id]
+             WHERE hp.id = ? AND ra.finca_id = ?`, 
+            [id, finca_id]
         );
 
         if (pesajeResult.length === 0) {
-            return res.status(404).json({ error: "Pesaje no encontrado con el ID proporcionado" });
-        }
-
-        if (rolUsuario !== 'admin' && pesajeResult[0].id_usuario !== idUsuario) {
-            return res.status(403).json({ 
-                error: "No tienes permiso para modificar este pesaje" 
-            });
+            return res.status(404).json({ error: "Pesaje no encontrado en tu finca" });
         }
 
         const [updateResult] = await db.query(
@@ -420,18 +452,24 @@ router.put('/:id', verificarToken, adminOUser, async (req, res) => {
             return res.status(404).json({ error: "No se pudo actualizar el pesaje" });
         }
 
+        console.log("✅ Pesaje actualizado exitosamente");
+
         res.json({ message: "Pesaje actualizado correctamente" });
 
     } catch (err) {
-        console.error("Error al actualizar el pesaje:", err);
+        console.error("❌ Error al actualizar el pesaje:", err);
         res.status(500).json({ error: "Error al actualizar el pesaje" });
     }
 });
 
-router.put('/chip/:chip_animal', verificarToken, adminOUser, async (req, res) => {
+// ============================================
+// PUT /weighing/chip/:chip_animal - Actualizar pesajes por chip
+// Admin y User pueden actualizar de SU FINCA
+// ⭐ Viewer NO puede actualizar (bloqueado)
+// ============================================
+router.put('/chip/:chip_animal', verificarToken, bloquearViewer, async (req, res) => {
     const { chip_animal } = req.params;
-    const rolUsuario = req.usuario.rol;
-    const idUsuario = req.usuario.id;
+    const finca_id = req.usuario.finca_id;
 
     const { 
         fecha_pesaje, 
@@ -451,19 +489,14 @@ router.put('/chip/:chip_animal', verificarToken, adminOUser, async (req, res) =>
     }
 
     try {
+        // ⭐ Verificar que el animal pertenezca a la finca del usuario
         const [animalResult] = await db.query(
-            `SELECT id_usuario FROM registro_animal WHERE chip_animal = ?`,
-            [chip_animal]
+            `SELECT finca_id FROM registro_animal WHERE chip_animal = ? AND finca_id = ?`,
+            [chip_animal, finca_id]
         );
 
         if (animalResult.length === 0) {
-            return res.status(404).json({ error: "Animal no encontrado" });
-        }
-
-        if (rolUsuario !== 'admin' && animalResult[0].id_usuario !== idUsuario) {
-            return res.status(403).json({ 
-                error: "No tienes permiso para modificar pesajes de este animal" 
-            });
+            return res.status(404).json({ error: "Animal no encontrado en tu finca" });
         }
 
         const [pesajeResult] = await db.query(
@@ -507,10 +540,12 @@ router.put('/chip/:chip_animal', verificarToken, adminOUser, async (req, res) =>
             return res.status(404).json({ error: "No se pudo actualizar el pesaje" });
         }
 
+        console.log("✅ Pesaje actualizado exitosamente");
+
         res.json({ message: "Pesaje actualizado correctamente" });
 
     } catch (err) {
-        console.error("Error al actualizar el pesaje:", err);
+        console.error("❌ Error al actualizar el pesaje:", err);
         res.status(500).json({ error: "Error al actualizar el pesaje" });
     }
 });

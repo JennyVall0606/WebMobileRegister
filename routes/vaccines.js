@@ -2,9 +2,24 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 const { verificarToken } = require("./auth");
-const { adminOUser, cualquierUsuario } = require("../middlewares/authorization");
+const { adminOUser, cualquierUsuario, bloquearViewer } = require("../middlewares/authorization");
 
-router.post("/add", verificarToken, adminOUser, async (req, res) => {
+// ============================================
+// POST /vaccines/add - Crear nueva vacuna
+// Admin y User pueden crear
+// ⭐ Viewer NO puede crear (bloqueado)
+// ⭐ Vacuna se asigna a un animal de la FINCA del usuario
+// ============================================
+router.post("/add", verificarToken, bloquearViewer, async (req, res) => {
+  const finca_id = req.usuario?.finca_id;
+
+  if (!finca_id) {
+    return res.status(400).json({ 
+      error: "Usuario sin finca asignada",
+      detalle: "El usuario debe tener una finca asignada"
+    });
+  }
+
   let {
     fecha_vacuna,
     tipo_vacunas_id_tipo_vacuna,
@@ -14,49 +29,47 @@ router.post("/add", verificarToken, adminOUser, async (req, res) => {
     observaciones,
   } = req.body;
 
+  console.log("📥 Datos recibidos:", { fecha_vacuna, chip_animal, dosis_administrada });
+  console.log("👤 Usuario registrando:", req.usuario.correo, "- Finca:", finca_id);
+
   if (!fecha_vacuna || !chip_animal || !dosis_administrada) {
-    return res.status(400).json({ error: "Todos los campos son obligatorios" });
+    return res.status(400).json({ error: "Todos los campos son obligatorios (fecha_vacuna, chip_animal, dosis_administrada)" });
   }
 
   try {
+    // ⭐ Buscar el animal EN LA FINCA del usuario
     const [animal] = await db.query(
-      "SELECT id, id_usuario FROM registro_animal WHERE chip_animal = ?",
-      [chip_animal]
+      "SELECT id, finca_id FROM registro_animal WHERE chip_animal = ? AND finca_id = ?",
+      [chip_animal, finca_id]
     );
 
     if (animal.length === 0) {
       return res.status(404).json({
-        error: "El animal con este chip no existe en la base de datos",
+        error: "El animal con este chip no existe en tu finca",
       });
     }
 
     const registro_animal_id = animal[0].id;
-    const id_usuario_animal = animal[0].id_usuario;
-    const rolUsuario = req.usuario.rol;
-    const idUsuario = req.usuario.id;
 
-    if (rolUsuario !== 'admin' && id_usuario_animal !== idUsuario) {
-      return res.status(403).json({ 
-        error: "No tienes permiso para registrar vacunas en este animal" 
-      });
-    }
-
+    // Validar vacuna (asignar valor por defecto si no existe)
     const [vacuna] = await db.query(
       "SELECT id_vacuna FROM nombre_vacunas WHERE id_vacuna = ?",
       [nombre_vacunas_id_vacuna]
     );
     if (vacuna.length === 0) {
-      nombre_vacunas_id_vacuna = 23;
+      nombre_vacunas_id_vacuna = 23; // ID por defecto para "Otra vacuna"
     }
 
+    // Validar tipo de vacuna (asignar valor por defecto si no existe)
     const [tipoVacuna] = await db.query(
       "SELECT id_tipo_vacuna FROM tipo_vacunas WHERE id_tipo_vacuna = ?",
       [tipo_vacunas_id_tipo_vacuna]
     );
     if (tipoVacuna.length === 0) {
-      tipo_vacunas_id_tipo_vacuna = 11;
+      tipo_vacunas_id_tipo_vacuna = 11; // ID por defecto para "Otro tipo"
     }
 
+    // Validar formato de dosis
     if (typeof dosis_administrada === "string" && !dosis_administrada.includes(" ")) {
       return res.status(400).json({
         error: 'La dosis administrada debe incluir la cantidad y la unidad (ej. "3 ml")',
@@ -77,38 +90,48 @@ router.post("/add", verificarToken, adminOUser, async (req, res) => {
       observaciones,
     ]);
 
-    res.status(201).json({ message: "Vacuna registrada con éxito", id: result.insertId });
+    console.log("✅ Vacuna registrada con ID:", result.insertId);
+
+    res.status(201).json({ 
+      message: "Vacuna registrada con éxito", 
+      id: result.insertId,
+      chip_animal: chip_animal,
+      registrado_por: req.usuario.correo
+    });
   } catch (error) {
     console.error("❌ Error al registrar vacuna:", error);
-    res.status(500).json({ error: "Error al registrar la vacuna" });
+    res.status(500).json({ 
+      error: "Error al registrar la vacuna",
+      details: error.message
+    });
   }
 });
 
-router.delete("/delete/:chip_animal", verificarToken, adminOUser, async (req, res) => {
+// ============================================
+// DELETE /vaccines/delete/:chip_animal - Eliminar vacunas de un animal
+// Admin y User pueden eliminar de SU FINCA
+// ⭐ Viewer NO puede eliminar (bloqueado)
+// ============================================
+router.delete("/delete/:chip_animal", verificarToken, bloquearViewer, async (req, res) => {
   const { chip_animal } = req.params;
-  const rolUsuario = req.usuario.rol;
-  const idUsuario = req.usuario.id;
+  const finca_id = req.usuario.finca_id;
+
+  console.log("🗑️ Intentando eliminar vacunas del chip:", chip_animal, "- Finca:", finca_id);
 
   try {
+    // ⭐ Buscar el animal EN LA FINCA del usuario
     const [animal] = await db.query(
-      "SELECT id, id_usuario FROM registro_animal WHERE chip_animal = ?",
-      [chip_animal]
+      "SELECT id, finca_id FROM registro_animal WHERE chip_animal = ? AND finca_id = ?",
+      [chip_animal, finca_id]
     );
 
     if (animal.length === 0) {
       return res.status(404).json({
-        error: "El animal con este chip no existe en la base de datos",
+        error: "El animal con este chip no existe en tu finca",
       });
     }
 
     const registro_animal_id = animal[0].id;
-    const id_usuario_animal = animal[0].id_usuario;
-
-    if (rolUsuario !== 'admin' && id_usuario_animal !== idUsuario) {
-      return res.status(403).json({ 
-        error: "No tienes permiso para eliminar vacunas de este animal" 
-      });
-    }
 
     const [result] = await db.query(
       "DELETE FROM historico_vacuna WHERE registro_animal_id = ?",
@@ -119,67 +142,90 @@ router.delete("/delete/:chip_animal", verificarToken, adminOUser, async (req, re
       return res.status(404).json({ error: "No se encontró el registro de vacuna para el animal" });
     }
 
-    res.json({ message: "Vacuna eliminada con éxito" });
+    console.log("✅ Vacunas eliminadas exitosamente");
+
+    res.json({ 
+      message: "Vacuna(s) eliminada(s) con éxito",
+      eliminados: result.affectedRows
+    });
   } catch (error) {
     console.error("❌ Error al eliminar vacuna:", error);
     res.status(500).json({ error: "Error al eliminar la vacuna" });
   }
 });
 
+// ============================================
+// GET /vaccines/all - Listar todas las vacunas
+// ⭐ Todos ven SOLO las vacunas de animales de SU FINCA
+// ============================================
 router.get("/all", verificarToken, cualquierUsuario, async (req, res) => {
-  const rolUsuario = req.usuario.rol;
-  const idUsuario = req.usuario.id;
+  const finca_id = req.usuario.finca_id;
+
+  console.log("📋 Listando vacunas - Usuario:", req.usuario.correo, "- Finca:", finca_id);
+
+  if (!finca_id) {
+    return res.status(400).json({ 
+      error: "Usuario sin finca asignada" 
+    });
+  }
 
   try {
-    let query;
-    let params = [];
+    // ⭐ Solo ver vacunas de animales de SU finca
+    const query = `
+      SELECT hv.* 
+      FROM historico_vacuna hv
+      JOIN registro_animal ra ON hv.registro_animal_id = ra.id
+      WHERE ra.finca_id = ?
+      ORDER BY hv.fecha_vacuna DESC
+    `;
 
-    if (rolUsuario === 'admin') {
-      query = "SELECT * FROM historico_vacuna";
-    } else {
-      query = `
-        SELECT hv.* 
-        FROM historico_vacuna hv
-        JOIN registro_animal ra ON hv.registro_animal_id = ra.id
-        WHERE ra.id_usuario = ?
-      `;
-      params = [idUsuario];
-    }
+    const [results] = await db.query(query, [finca_id]);
 
-    const [results] = await db.query(query, params);
-    res.json(results);
+    console.log(`✅ ${results.length} vacunas encontradas`);
+
+    res.json({
+      total: results.length,
+      finca_id: finca_id,
+      vacunas: results
+    });
   } catch (error) {
     console.error("❌ Error al obtener vacunas:", error);
     res.status(500).json({ error: "Error al obtener las vacunas" });
   }
 });
 
+// ============================================
+// GET /vaccines/historico-vacunas - Histórico detallado
+// ⭐ Solo vacunas de animales de SU FINCA
+// ============================================
 router.get("/historico-vacunas", verificarToken, cualquierUsuario, async (req, res) => {
-  const rolUsuario = req.usuario.rol;
-  const idUsuario = req.usuario.id;
+  const finca_id = req.usuario.finca_id;
+
+  if (!finca_id) {
+    return res.status(400).json({ 
+      error: "Usuario sin finca asignada" 
+    });
+  }
 
   try {
-    let query;
-    let params = [];
+    const query = `
+      SELECT 
+        hv.id,
+        ra.chip_animal,
+        hv.fecha_vacuna,
+        tv.tipo AS tipo_vacuna,
+        nv.nombre,
+        hv.dosis_administrada,
+        hv.observaciones
+      FROM historico_vacuna hv
+      JOIN registro_animal ra ON hv.registro_animal_id = ra.id
+      LEFT JOIN tipo_vacunas tv ON hv.tipo_vacunas_id_tipo_vacuna = tv.id_tipo_vacuna
+      LEFT JOIN nombre_vacunas nv ON hv.nombre_vacunas_id_vacuna = nv.id_vacuna
+      WHERE ra.finca_id = ?
+      ORDER BY hv.fecha_vacuna DESC
+    `;
 
-    if (rolUsuario === 'admin') {
-      query = `
-        SELECT id, chip_animal, fecha_vacuna, tipo_vacuna, nombre, dosis_administrada, observaciones
-        FROM vista_historico_vacuna
-        ORDER BY fecha_vacuna DESC
-      `;
-    } else {
-      query = `
-        SELECT vhv.id, vhv.chip_animal, vhv.fecha_vacuna, vhv.tipo_vacuna, vhv.nombre, vhv.dosis_administrada, vhv.observaciones
-        FROM vista_historico_vacuna vhv
-        JOIN registro_animal ra ON vhv.chip_animal = ra.chip_animal
-        WHERE ra.id_usuario = ?
-        ORDER BY vhv.fecha_vacuna DESC
-      `;
-      params = [idUsuario];
-    }
-
-    const [rows] = await db.query(query, params);
+    const [rows] = await db.query(query, [finca_id]);
 
     if (rows.length === 0) {
       return res.status(404).json({ error: "No se encontraron registros de vacunas" });
@@ -202,10 +248,19 @@ router.get("/historico-vacunas", verificarToken, cualquierUsuario, async (req, r
   }
 });
 
+// ============================================
+// GET /vaccines/animal/:chip_animal - Vacunas de un animal específico
+// ⭐ Solo si el animal pertenece a la finca del usuario
+// ============================================
 router.get("/animal/:chip_animal", verificarToken, cualquierUsuario, async (req, res) => {
   const { chip_animal } = req.params;
-  const rolUsuario = req.usuario.rol;
-  const idUsuario = req.usuario.id;
+  const finca_id = req.usuario.finca_id;
+
+  if (!finca_id) {
+    return res.status(400).json({ 
+      error: "Usuario sin finca asignada" 
+    });
+  }
 
   const query = `
     SELECT 
@@ -221,17 +276,16 @@ router.get("/animal/:chip_animal", verificarToken, cualquierUsuario, async (req,
     JOIN registro_animal ra ON hv.registro_animal_id = ra.id
     LEFT JOIN nombre_vacunas nv ON hv.nombre_vacunas_id_vacuna = nv.id_vacuna
     LEFT JOIN tipo_vacunas tv ON hv.tipo_vacunas_id_tipo_vacuna = tv.id_tipo_vacuna
-    WHERE ra.chip_animal = ?
-    ${rolUsuario !== 'admin' ? 'AND ra.id_usuario = ?' : ''}
+    WHERE ra.chip_animal = ? AND ra.finca_id = ?
+    ORDER BY hv.fecha_vacuna DESC
   `;
 
   try {
-    const params = rolUsuario === 'admin' ? [chip_animal] : [chip_animal, idUsuario];
-    const [results] = await db.query(query, params);
+    const [results] = await db.query(query, [chip_animal, finca_id]);
 
     if (results.length === 0) {
       return res.status(404).json({
-        error: `No se encontraron registros de vacunas para el chip_animal ${chip_animal}`,
+        error: `No se encontraron registros de vacunas para el chip_animal ${chip_animal} en tu finca`,
       });
     }
 
@@ -242,10 +296,14 @@ router.get("/animal/:chip_animal", verificarToken, cualquierUsuario, async (req,
   }
 });
 
-router.put("/:id", verificarToken, adminOUser, async (req, res) => {
+// ============================================
+// PUT /vaccines/:id - Actualizar vacuna
+// Admin y User pueden actualizar de SU FINCA
+// ⭐ Viewer NO puede actualizar (bloqueado)
+// ============================================
+router.put("/:id", verificarToken, bloquearViewer, async (req, res) => {
   const { id } = req.params;
-  const rolUsuario = req.usuario.rol;
-  const idUsuario = req.usuario.id;
+  const finca_id = req.usuario.finca_id;
 
   const {
     fecha_vacuna,
@@ -256,22 +314,17 @@ router.put("/:id", verificarToken, adminOUser, async (req, res) => {
   } = req.body;
 
   try {
+    // ⭐ Verificar que la vacuna pertenezca a un animal de SU finca
     const [vacuna] = await db.query(
-      `SELECT hv.*, ra.id_usuario 
+      `SELECT hv.*, ra.finca_id 
        FROM historico_vacuna hv
        JOIN registro_animal ra ON hv.registro_animal_id = ra.id
-       WHERE hv.id = ?`,
-      [id]
+       WHERE hv.id = ? AND ra.finca_id = ?`,
+      [id, finca_id]
     );
 
     if (vacuna.length === 0) {
-      return res.status(404).json({ error: "Vacuna no encontrada" });
-    }
-
-    if (rolUsuario !== 'admin' && vacuna[0].id_usuario !== idUsuario) {
-      return res.status(403).json({ 
-        error: "No tienes permiso para modificar esta vacuna" 
-      });
+      return res.status(404).json({ error: "Vacuna no encontrada en tu finca" });
     }
 
     const updateFields = [];
@@ -316,63 +369,7 @@ router.put("/:id", verificarToken, adminOUser, async (req, res) => {
       return res.status(404).json({ error: "Vacuna no encontrada para actualizar" });
     }
 
-    res.json({ message: "Vacuna actualizada con éxito" });
-  } catch (error) {
-    console.error("❌ Error al actualizar vacuna:", error);
-    res.status(500).json({ error: "Error al actualizar la vacuna" });
-  }
-});
-
-router.put("/chip/:id", verificarToken, adminOUser, async (req, res) => {
-  const { id } = req.params;
-  const rolUsuario = req.usuario.rol;
-  const idUsuario = req.usuario.id;
-
-  const {
-    fecha_vacuna,
-    tipo_vacunas_id_tipo_vacuna,
-    nombre_vacunas_id_vacuna,
-    dosis_administrada,
-    observaciones,
-  } = req.body;
-
-  try {
-    const [vacuna] = await db.query(
-      `SELECT hv.*, ra.id_usuario 
-       FROM historico_vacuna hv
-       JOIN registro_animal ra ON hv.registro_animal_id = ra.id
-       WHERE hv.id = ?`,
-      [id]
-    );
-
-    if (vacuna.length === 0) {
-      return res.status(404).json({ error: "Vacuna no encontrada" });
-    }
-
-    if (rolUsuario !== 'admin' && vacuna[0].id_usuario !== idUsuario) {
-      return res.status(403).json({ 
-        error: "No tienes permiso para modificar esta vacuna" 
-      });
-    }
-
-    const updateQuery = `
-      UPDATE historico_vacuna 
-      SET fecha_vacuna = ?, tipo_vacunas_id_tipo_vacuna = ?, 
-          nombre_vacunas_id_vacuna = ?, dosis_administrada = ?, observaciones = ? 
-      WHERE id = ?`;
-
-    const [result] = await db.query(updateQuery, [
-      fecha_vacuna,
-      tipo_vacunas_id_tipo_vacuna,
-      nombre_vacunas_id_vacuna,
-      dosis_administrada,
-      observaciones,
-      id,
-    ]);
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Vacuna no encontrada para actualizar" });
-    }
+    console.log("✅ Vacuna actualizada exitosamente");
 
     res.json({ message: "Vacuna actualizada con éxito" });
   } catch (error) {
@@ -381,10 +378,14 @@ router.put("/chip/:id", verificarToken, adminOUser, async (req, res) => {
   }
 });
 
+// ============================================
+// GET /vaccines/tipos-vacuna - Catálogo de tipos
+// ⭐ Ruta pública
+// ============================================
 router.get("/tipos-vacuna", async (req, res) => {
   try {
     const [tipos] = await db.query(
-      "SELECT id_tipo_vacuna AS value, tipo AS label FROM tipo_vacunas"
+      "SELECT id_tipo_vacuna AS value, tipo AS label FROM tipo_vacunas ORDER BY tipo"
     );
     res.json(tipos);
   } catch (error) {
@@ -393,10 +394,14 @@ router.get("/tipos-vacuna", async (req, res) => {
   }
 });
 
+// ============================================
+// GET /vaccines/nombres-vacuna - Catálogo de nombres
+// ⭐ Ruta pública
+// ============================================
 router.get("/nombres-vacuna", async (req, res) => {
   try {
     const [nombres] = await db.query(
-      "SELECT id_vacuna AS value, nombre AS label FROM nombre_vacunas"
+      "SELECT id_vacuna AS value, nombre AS label FROM nombre_vacunas ORDER BY nombre"
     );
     res.json(nombres);
   } catch (error) {
