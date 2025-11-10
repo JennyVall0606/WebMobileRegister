@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcrypt");
 const Usuario = require("../models/user");
+const Finca = require("../models/finca");
 const db = require("../db");
 const { verificarToken } = require("./auth");
 const { soloAdmin } = require("../middlewares/authorization");
@@ -33,6 +34,8 @@ router.get("/", verificarToken, soloAdmin, async (req, res) => {
       id: u.id,
       correo: u.correo,
       rol: u.rol,
+      finca_id: u.finca_id,
+      finca_nombre: u.finca_nombre || 'Sin finca asignada',
       creado_en: u.creado_en,
       tiene_contraseña_temporal: true
     }));
@@ -65,6 +68,9 @@ router.get("/:id", verificarToken, soloAdmin, async (req, res) => {
       id: usuario.id,
       correo: usuario.correo,
       rol: usuario.rol,
+      finca_id: usuario.finca_id,
+      finca_nombre: usuario.finca_nombre || 'Sin finca asignada',
+      finca_nit: usuario.finca_nit || null,
       creado_en: usuario.creado_en
     };
 
@@ -111,12 +117,13 @@ router.get("/:id/contraseña", verificarToken, soloAdmin, async (req, res) => {
 // POST /api/usuarios - Crear nuevo usuario
 // ============================================
 router.post("/", verificarToken, soloAdmin, async (req, res) => {
-  const { correo, contraseña, rol } = req.body;
+  const { correo, contraseña, rol, finca_id } = req.body;
 
-  if (!correo || !contraseña || !rol) {
+  // Validación de campos obligatorios
+  if (!correo || !contraseña || !rol || !finca_id) {
     return res.status(400).json({ 
       mensaje: "Todos los campos son obligatorios",
-      camposRequeridos: ["correo", "contraseña", "rol"]
+      camposRequeridos: ["correo", "contraseña", "rol", "finca_id"]
     });
   }
 
@@ -139,6 +146,17 @@ router.post("/", verificarToken, soloAdmin, async (req, res) => {
   try {
     await connection.beginTransaction();
 
+    // ⭐ Verificar que la finca exista
+    const fincaExiste = await Finca.existe(finca_id);
+    if (!fincaExiste) {
+      await connection.rollback();
+      connection.release();
+      return res.status(404).json({ 
+        mensaje: "La finca especificada no existe" 
+      });
+    }
+
+    // Verificar que el correo no esté registrado
     const usuarioExistente = await Usuario.buscarPorCorreo(correo);
     if (usuarioExistente) {
       await connection.rollback();
@@ -153,7 +171,8 @@ router.post("/", verificarToken, soloAdmin, async (req, res) => {
     const nuevoUsuario = await Usuario.crear({
       correo,
       contraseña: contraseñaCifrada,
-      rol: rolNormalizado  // ⭐ Guardar el rol normalizado
+      rol: rolNormalizado,
+      finca_id: finca_id
     });
 
     await connection.query(
@@ -165,12 +184,17 @@ router.post("/", verificarToken, soloAdmin, async (req, res) => {
     await connection.commit();
     connection.release();
 
+    // Obtener información de la finca
+    const finca = await Finca.buscarPorId(finca_id);
+
     res.status(201).json({
       mensaje: "Usuario creado exitosamente",
       usuario: {
         id: nuevoUsuario.id,
         correo: nuevoUsuario.correo,
-        rol: nuevoUsuario.rol
+        rol: nuevoUsuario.rol,
+        finca_id: nuevoUsuario.finca_id,
+        finca_nombre: finca.nombre
       },
       contraseña_asignada: contraseña
     });
@@ -187,7 +211,7 @@ router.post("/", verificarToken, soloAdmin, async (req, res) => {
 // ============================================
 router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
   const { id } = req.params;
-  const { correo, contraseña, rol } = req.body;
+  const { correo, contraseña, rol, finca_id } = req.body;
 
   const connection = await db.getConnection();
 
@@ -199,6 +223,18 @@ router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
       await connection.rollback();
       connection.release();
       return res.status(404).json({ mensaje: "Usuario no encontrado" });
+    }
+
+    // ⭐ Si se proporciona finca_id, verificar que exista
+    if (finca_id !== undefined) {
+      const fincaExiste = await Finca.existe(finca_id);
+      if (!fincaExiste) {
+        await connection.rollback();
+        connection.release();
+        return res.status(404).json({ 
+          mensaje: "La finca especificada no existe" 
+        });
+      }
     }
 
     // ⭐ Normalizar el rol si se proporciona
@@ -223,7 +259,8 @@ router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
     let datosActualizar = {};
     
     if (correo) datosActualizar.correo = correo;
-    if (rolNormalizado) datosActualizar.rol = rolNormalizado;  // ⭐ Usar el rol normalizado
+    if (rolNormalizado) datosActualizar.rol = rolNormalizado;
+    if (finca_id !== undefined) datosActualizar.finca_id = finca_id;
     
     if (contraseña) {
       datosActualizar.contraseña = await bcrypt.hash(contraseña, 10);
@@ -245,12 +282,17 @@ router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
     await connection.commit();
     connection.release();
 
+    // Obtener usuario actualizado con información de finca
+    const usuarioActualizado = await Usuario.buscarPorId(id);
+
     const respuesta = {
       mensaje: "Usuario actualizado exitosamente",
       usuario: {
         id: parseInt(id),
-        ...datosActualizar,
-        contraseña: undefined
+        correo: usuarioActualizado.correo,
+        rol: usuarioActualizado.rol,
+        finca_id: usuarioActualizado.finca_id,
+        finca_nombre: usuarioActualizado.finca_nombre
       }
     };
 

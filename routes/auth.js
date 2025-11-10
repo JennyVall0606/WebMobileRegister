@@ -5,13 +5,15 @@ const bcrypt = require("bcrypt");
 const Usuario = require("../models/user");
 const db = require("../db");
 
+// ============================================
 // 🔐 Generar ambos tokens (acceso + refresh)
+// ============================================
 const generarTokens = (usuario) => {
   const accessToken = jwt.sign(
     {
       id: usuario.id || usuario.id_usuario,
       correo: usuario.correo,
-      rol: usuario.rol
+      rol: usuario.rol  // ⭐ IMPORTANTE: Incluir el rol
     },
     process.env.JWT_SECRET || 'clave_secreta',
     { expiresIn: '1h' }  // Token de acceso: 1 hora
@@ -21,6 +23,7 @@ const generarTokens = (usuario) => {
     {
       id: usuario.id || usuario.id_usuario,
       correo: usuario.correo,
+      rol: usuario.rol,  // ⭐ IMPORTANTE: Incluir el rol también aquí
       tipo: 'refresh'
     },
     process.env.JWT_REFRESH_SECRET || 'clave_secreta_refresh',
@@ -30,7 +33,9 @@ const generarTokens = (usuario) => {
   return { accessToken, refreshToken };
 };
 
+// ============================================
 // 🔒 Middleware de autenticación
+// ============================================
 const verificarToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
 
@@ -47,29 +52,46 @@ const verificarToken = (req, res, next) => {
       token = authHeader;
     }
 
-    console.log("Header completo:", authHeader);
-    console.log("Token extraído:", token.substring(0, 20) + "...");
+    console.log("🔍 Verificando token...");
 
     const decodificado = jwt.verify(
       token,
       process.env.JWT_SECRET || "clave_secreta"
     );
     
-    console.log("Token decodificado exitosamente:", decodificado.id);
-    req.usuario = decodificado;
+    // ⭐ IMPORTANTE: Asegurar que el usuario tenga todos los datos necesarios
+    req.usuario = {
+      id: decodificado.id,
+      correo: decodificado.correo,
+      rol: decodificado.rol  // ⭐ El rol debe estar aquí
+    };
+
+    console.log("✅ Token válido - Usuario:", req.usuario.correo, "- Rol:", req.usuario.rol);
     next();
     
   } catch (error) {
-    console.error("Error al verificar el token:", error.message);
-    return res.status(401).json({ mensaje: "Token inválido" });
+    console.error("❌ Error al verificar el token:", error.message);
+    return res.status(401).json({ mensaje: "Token inválido o expirado" });
   }
 };
 
+// ============================================
+// 📝 Registro de usuario (Solo Admin debería usar esto)
+// ============================================
 router.post("/registroUser", async (req, res) => {
   const { correo, contraseña, rol } = req.body;
 
   if (!correo || !contraseña || !rol) {
     return res.status(400).json({ mensaje: "Todos los campos son obligatorios" });
+  }
+
+  // ⭐ Validar roles permitidos
+  const rolesPermitidos = ['admin', 'user', 'viewer'];
+  if (!rolesPermitidos.includes(rol.toLowerCase())) {
+    return res.status(400).json({ 
+      mensaje: "Rol inválido",
+      rolesPermitidos: rolesPermitidos
+    });
   }
 
   try {
@@ -83,40 +105,51 @@ router.post("/registroUser", async (req, res) => {
     const nuevoUsuario = await Usuario.crear({
       correo,
       contraseña: contraseñaCifrada,
-      rol,
+      rol: rol.toLowerCase(),
     });
 
     return res.status(201).json({
       mensaje: "Usuario creado con éxito",
       usuario: {
+        id: nuevoUsuario.id,
         correo: nuevoUsuario.correo,
         rol: nuevoUsuario.rol,
       },
     });
   } catch (error) {
-    console.error(error);
+    console.error("❌ Error al crear usuario:", error);
     return res.status(500).json({ mensaje: "Error del servidor al crear el usuario" });
   }
 });
 
-// ✅ Ruta de login - ACTUALIZADA para devolver ambos tokens
+// ============================================
+// 🔑 Login - Autenticación de usuario
+// ============================================
 router.post("/login", async (req, res) => {
   const { correo, contraseña } = req.body;
 
+  if (!correo || !contraseña) {
+    return res.status(400).json({ mensaje: "Correo y contraseña son obligatorios" });
+  }
+
   try {
+    console.log("🔍 Intentando login para:", correo);
+
     const usuario = await Usuario.buscarPorCorreo(correo);
 
     if (!usuario) {
-      return res.status(404).json({ mensaje: "Usuario no encontrado" });
+      console.log("❌ Usuario no encontrado");
+      return res.status(404).json({ mensaje: "Credenciales incorrectas" });
     }
 
     const esCorrecta = await bcrypt.compare(contraseña, usuario.contraseña);
 
     if (!esCorrecta) {
-      return res.status(401).json({ mensaje: "Contraseña errada" });
+      console.log("❌ Contraseña incorrecta");
+      return res.status(401).json({ mensaje: "Credenciales incorrectas" });
     }
 
-    console.log("Usuario encontrado:", usuario);
+    console.log("✅ Login exitoso - Usuario:", usuario.correo, "- Rol:", usuario.rol);
 
     // 🔥 Generar ambos tokens
     const { accessToken, refreshToken } = generarTokens(usuario);
@@ -127,16 +160,18 @@ router.post("/login", async (req, res) => {
       usuario: {
         id: usuario.id || usuario.id_usuario,
         correo: usuario.correo,
-        rol: usuario.rol
+        rol: usuario.rol  // ⭐ Incluir el rol en la respuesta
       }
     });
   } catch (error) {
-    console.error(error);
+    console.error("❌ Error en login:", error);
     res.status(500).json({ mensaje: "Error del servidor" });
   }
 });
 
-// 🔄 NUEVA RUTA: Refresh token
+// ============================================
+// 🔄 Refresh token - Renovar token de acceso
+// ============================================
 router.post("/refresh", async (req, res) => {
   const { refreshToken } = req.body;
 
@@ -159,21 +194,26 @@ router.post("/refresh", async (req, res) => {
 
     console.log("✅ Refresh token válido para:", decoded.correo);
 
-    // Buscar usuario
+    // Buscar usuario actualizado en la BD (por si cambió el rol)
     const usuario = await Usuario.buscarPorCorreo(decoded.correo);
     
     if (!usuario) {
       return res.status(404).json({ mensaje: "Usuario no encontrado" });
     }
 
-    // Generar nuevos tokens
+    // Generar nuevos tokens con el rol actualizado
     const { accessToken, refreshToken: newRefreshToken } = generarTokens(usuario);
 
-    console.log("✅ Nuevos tokens generados");
+    console.log("✅ Nuevos tokens generados para:", usuario.correo, "- Rol:", usuario.rol);
 
     return res.json({ 
       token: accessToken,
-      refreshToken: newRefreshToken
+      refreshToken: newRefreshToken,
+      usuario: {
+        id: usuario.id,
+        correo: usuario.correo,
+        rol: usuario.rol  // ⭐ Devolver el rol actualizado
+      }
     });
 
   } catch (error) {
@@ -182,41 +222,69 @@ router.post("/refresh", async (req, res) => {
   }
 });
 
+// ============================================
 // ✅ Ruta protegida de prueba
+// ============================================
 router.get("/protegida", verificarToken, (req, res) => {
   res.json({
-    mensaje: "Accediste a la ruta protegida",
+    mensaje: "✅ Accediste a la ruta protegida",
     usuario: req.usuario,
   });
 });
 
-// ✅ Ruta para obtener animales del usuario autenticado
+// ============================================
+// ✅ Obtener animales del usuario autenticado
+// ============================================
 router.get("/mis-animales", verificarToken, async (req, res) => {
-  const correo = req.usuario.correo;
+  const usuarioId = req.usuario.id;
+  const rolUsuario = req.usuario.rol;
 
   try {
-    const [usuario] = await db.query(
-      "SELECT id FROM usuarios WHERE correo = ?",
-      [correo]
-    );
+    let query;
+    let params = [];
 
-    if (!usuario.length) {
-      return res.status(404).json({ mensaje: "Usuario no encontrado" });
+    // Admin ve todos los animales, otros solo los suyos
+    if (rolUsuario === 'admin') {
+      query = "SELECT * FROM vista_registro_animal";
+    } else {
+      query = "SELECT * FROM vista_registro_animal WHERE id_usuario = ?";
+      params = [usuarioId];
     }
 
-    const idUsuario = usuario[0].id;
+    const [animales] = await db.query(query, params);
 
-    const [animales] = await db.query(
-      "SELECT * FROM vista_registro_animal WHERE id_usuario = ?",
-      [idUsuario]
-    );
-
-    res.json(animales);
+    res.json({
+      total: animales.length,
+      animales: animales
+    });
   } catch (error) {
-    console.error(error);
+    console.error("❌ Error al obtener animales:", error);
     res.status(500).json({ mensaje: "Error al obtener animales" });
   }
 }); 
+
+// ============================================
+// 📊 NUEVA RUTA: Obtener perfil del usuario actual
+// ============================================
+router.get("/perfil", verificarToken, async (req, res) => {
+  try {
+    const usuario = await Usuario.buscarPorId(req.usuario.id);
+    
+    if (!usuario) {
+      return res.status(404).json({ mensaje: "Usuario no encontrado" });
+    }
+
+    res.json({
+      id: usuario.id,
+      correo: usuario.correo,
+      rol: usuario.rol,
+      creado_en: usuario.creado_en
+    });
+  } catch (error) {
+    console.error("❌ Error al obtener perfil:", error);
+    res.status(500).json({ mensaje: "Error al obtener perfil" });
+  }
+});
 
 module.exports = {
   router,
