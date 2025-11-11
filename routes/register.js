@@ -362,15 +362,28 @@ router.get("/animal/:chip_animal", verificarToken, cualquierUsuario, async (req,
 // ============================================
 router.put("/update/:chip_animal", verificarToken, bloquearViewer, upload.single("foto"), async (req, res) => {
   const chip_animal_original = req.params.chip_animal;
-  const finca_id = req.usuario.finca_id;
+  const rolUsuario = req.usuario.rol;
+  
+  // ⭐ Admin puede especificar finca_id, otros usan la suya
+  let finca_id;
+  if (rolUsuario === 'admin') {
+    finca_id = req.body.finca_id || req.usuario.finca_id;
+    console.log('🔧 Admin actualizando - Finca body:', req.body.finca_id, '- Finca usuario:', req.usuario.finca_id);
+  } else {
+    finca_id = req.usuario.finca_id;
+  }
 
-  console.log("📝 Actualizando animal:", chip_animal_original, "- Finca:", finca_id);
+  console.log("📝 Actualizando animal:", chip_animal_original, "- Finca:", finca_id, "- Rol:", rolUsuario);
 
   if (!finca_id) {
     return res.status(400).json({ 
-      error: "Usuario sin finca asignada" 
+      error: "Finca no especificada",
+      detalle: rolUsuario === 'admin' 
+        ? "Selecciona una finca en el formulario"
+        : "Tu usuario debe tener una finca asignada"
     });
   }
+
 
   const {
     chip_animal = req.body.chip_animal,
