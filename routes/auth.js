@@ -13,25 +13,28 @@ const generarTokens = (usuario) => {
     {
       id: usuario.id || usuario.id_usuario,
       correo: usuario.correo,
-      rol: usuario.rol  // ⭐ IMPORTANTE: Incluir el rol
+      rol: usuario.rol,
+      finca_id: usuario.finca_id  // ⭐ AGREGAR
     },
     process.env.JWT_SECRET || 'clave_secreta',
-    { expiresIn: '1h' }  // Token de acceso: 1 hora
+    { expiresIn: '1h' }
   );
 
   const refreshToken = jwt.sign(
     {
       id: usuario.id || usuario.id_usuario,
       correo: usuario.correo,
-      rol: usuario.rol,  // ⭐ IMPORTANTE: Incluir el rol también aquí
+      rol: usuario.rol,
+      finca_id: usuario.finca_id,  // ⭐ AGREGAR
       tipo: 'refresh'
     },
     process.env.JWT_REFRESH_SECRET || 'clave_secreta_refresh',
-    { expiresIn: '30d' }  // Token de refresco: 30 días
+    { expiresIn: '30d' }
   );
 
   return { accessToken, refreshToken };
 };
+
 
 // ============================================
 // 🔒 Middleware de autenticación
@@ -59,14 +62,14 @@ const verificarToken = (req, res, next) => {
       process.env.JWT_SECRET || "clave_secreta"
     );
     
-    // ⭐ IMPORTANTE: Asegurar que el usuario tenga todos los datos necesarios
     req.usuario = {
       id: decodificado.id,
       correo: decodificado.correo,
-      rol: decodificado.rol  // ⭐ El rol debe estar aquí
+      rol: decodificado.rol,
+      finca_id: decodificado.finca_id  // ⭐ AGREGAR
     };
 
-    console.log("✅ Token válido - Usuario:", req.usuario.correo, "- Rol:", req.usuario.rol);
+    console.log("✅ Token válido - Usuario:", req.usuario.correo, "- Rol:", req.usuario.rol, "- Finca:", req.usuario.finca_id);
     next();
     
   } catch (error) {
@@ -74,6 +77,7 @@ const verificarToken = (req, res, next) => {
     return res.status(401).json({ mensaje: "Token inválido o expirado" });
   }
 };
+
 
 // ============================================
 // 📝 Registro de usuario (Solo Admin debería usar esto)
@@ -149,18 +153,18 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ mensaje: "Credenciales incorrectas" });
     }
 
-    console.log("✅ Login exitoso - Usuario:", usuario.correo, "- Rol:", usuario.rol);
+    console.log("✅ Login exitoso - Usuario:", usuario.correo, "- Rol:", usuario.rol, "- Finca:", usuario.finca_id);
 
-    // 🔥 Generar ambos tokens
     const { accessToken, refreshToken } = generarTokens(usuario);
     
     return res.json({ 
-      token: accessToken,           // Token principal (1 hora)
-      refreshToken: refreshToken,   // Token de refresco (30 días)
+      token: accessToken,
+      refreshToken: refreshToken,
       usuario: {
         id: usuario.id || usuario.id_usuario,
         correo: usuario.correo,
-        rol: usuario.rol  // ⭐ Incluir el rol en la respuesta
+        rol: usuario.rol,
+        finca_id: usuario.finca_id  // ⭐ AGREGAR
       }
     });
   } catch (error) {
@@ -168,6 +172,7 @@ router.post("/login", async (req, res) => {
     res.status(500).json({ mensaje: "Error del servidor" });
   }
 });
+
 
 // ============================================
 // 🔄 Refresh token - Renovar token de acceso
@@ -182,7 +187,6 @@ router.post("/refresh", async (req, res) => {
   try {
     console.log("🔄 Intentando refrescar token...");
 
-    // Verificar el refresh token
     const decoded = jwt.verify(
       refreshToken,
       process.env.JWT_REFRESH_SECRET || 'clave_secreta_refresh'
@@ -194,17 +198,15 @@ router.post("/refresh", async (req, res) => {
 
     console.log("✅ Refresh token válido para:", decoded.correo);
 
-    // Buscar usuario actualizado en la BD (por si cambió el rol)
     const usuario = await Usuario.buscarPorCorreo(decoded.correo);
     
     if (!usuario) {
       return res.status(404).json({ mensaje: "Usuario no encontrado" });
     }
 
-    // Generar nuevos tokens con el rol actualizado
     const { accessToken, refreshToken: newRefreshToken } = generarTokens(usuario);
 
-    console.log("✅ Nuevos tokens generados para:", usuario.correo, "- Rol:", usuario.rol);
+    console.log("✅ Nuevos tokens generados para:", usuario.correo, "- Rol:", usuario.rol, "- Finca:", usuario.finca_id);
 
     return res.json({ 
       token: accessToken,
@@ -212,7 +214,8 @@ router.post("/refresh", async (req, res) => {
       usuario: {
         id: usuario.id,
         correo: usuario.correo,
-        rol: usuario.rol  // ⭐ Devolver el rol actualizado
+        rol: usuario.rol,
+        finca_id: usuario.finca_id  // ⭐ AGREGAR
       }
     });
 
@@ -221,6 +224,7 @@ router.post("/refresh", async (req, res) => {
     return res.status(401).json({ mensaje: "Refresh token inválido o expirado" });
   }
 });
+
 
 // ============================================
 // ✅ Ruta protegida de prueba
