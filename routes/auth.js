@@ -243,27 +243,25 @@ router.get("/mis-animales", verificarToken, async (req, res) => {
     let query;
     let params = [];
 
-    // ⭐ Query con JOINs para obtener nombre de raza y finca
+    // ⭐ CORREGIDO: Usar 'raza' en lugar de 'razas'
     const baseQuery = `
       SELECT 
         registro_animal.*,
-        razas.nombre_raza as raza,
+        raza.nombre_raza as raza,
         fincas.nombre as finca_nombre
       FROM registro_animal
-      LEFT JOIN razas ON registro_animal.raza_id_raza = razas.id_raza
+      LEFT JOIN raza ON registro_animal.raza_id_raza = raza.id_raza
       LEFT JOIN fincas ON registro_animal.finca_id = fincas.id
     `;
 
-    // Admin ve todos los animales o solo los de su finca
     if (rolUsuario === 'admin') {
       if (finca_id) {
         query = baseQuery + " WHERE registro_animal.finca_id = ?";
         params = [finca_id];
       } else {
-        query = baseQuery; // Admin sin finca ve todos
+        query = baseQuery;
       }
     } else {
-      // Usuarios normales solo ven animales de su finca
       query = baseQuery + " WHERE registro_animal.finca_id = ?";
       params = [finca_id];
     }
@@ -281,7 +279,7 @@ router.get("/mis-animales", verificarToken, async (req, res) => {
       });
     }
 
-    res.json(animales); // ⭐ Devolver array directamente
+    res.json(animales);
 
   } catch (error) {
     console.error("❌ Error al obtener animales:", error);
@@ -292,6 +290,7 @@ router.get("/mis-animales", verificarToken, async (req, res) => {
     });
   }
 });
+
 
 
 
