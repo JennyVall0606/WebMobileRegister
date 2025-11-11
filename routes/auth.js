@@ -236,32 +236,64 @@ router.get("/protegida", verificarToken, (req, res) => {
 // ✅ Obtener animales del usuario autenticado
 // ============================================
 router.get("/mis-animales", verificarToken, async (req, res) => {
-  const usuarioId = req.usuario.id;
+  const finca_id = req.usuario.finca_id;
   const rolUsuario = req.usuario.rol;
 
   try {
     let query;
     let params = [];
 
-    // Admin ve todos los animales, otros solo los suyos
+    // ⭐ Query con JOINs para obtener nombre de raza y finca
+    const baseQuery = `
+      SELECT 
+        registro_animal.*,
+        razas.nombre_raza as raza,
+        fincas.nombre as finca_nombre
+      FROM registro_animal
+      LEFT JOIN razas ON registro_animal.raza_id_raza = razas.id_raza
+      LEFT JOIN fincas ON registro_animal.finca_id = fincas.id
+    `;
+
+    // Admin ve todos los animales o solo los de su finca
     if (rolUsuario === 'admin') {
-      query = "SELECT * FROM vista_registro_animal";
+      if (finca_id) {
+        query = baseQuery + " WHERE registro_animal.finca_id = ?";
+        params = [finca_id];
+      } else {
+        query = baseQuery; // Admin sin finca ve todos
+      }
     } else {
-      query = "SELECT * FROM vista_registro_animal WHERE id_usuario = ?";
-      params = [usuarioId];
+      // Usuarios normales solo ven animales de su finca
+      query = baseQuery + " WHERE registro_animal.finca_id = ?";
+      params = [finca_id];
     }
+
+    console.log('📊 Ejecutando query para rol:', rolUsuario, '- Finca:', finca_id);
 
     const [animales] = await db.query(query, params);
 
-    res.json({
-      total: animales.length,
-      animales: animales
-    });
+    console.log('✅ Animales obtenidos:', animales.length);
+    if (animales.length > 0) {
+      console.log('📊 Primer animal:', {
+        chip: animales[0].chip_animal,
+        raza: animales[0].raza,
+        finca: animales[0].finca_nombre
+      });
+    }
+
+    res.json(animales); // ⭐ Devolver array directamente
+
   } catch (error) {
     console.error("❌ Error al obtener animales:", error);
-    res.status(500).json({ mensaje: "Error al obtener animales" });
+    console.error("❌ SQL:", error.sql);
+    res.status(500).json({ 
+      mensaje: "Error al obtener animales",
+      error: error.message 
+    });
   }
-}); 
+});
+
+
 
 // ============================================
 // 📊 NUEVA RUTA: Obtener perfil del usuario actual
