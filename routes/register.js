@@ -283,43 +283,58 @@ router.get("/all", verificarToken, cualquierUsuario, async (req, res) => {
 router.get("/animal/:chip_animal", verificarToken, cualquierUsuario, async (req, res) => {
   const { chip_animal } = req.params;
   const finca_id = req.usuario.finca_id;
+  const rolUsuario = req.usuario.rol;
 
-  console.log("🔍 Buscando animal:", chip_animal, "- Finca:", finca_id);
+  console.log("🔍 Buscando animal:", chip_animal, "- Rol:", rolUsuario, "- Finca:", finca_id);
 
-  if (!finca_id) {
+  // ⭐ ADMIN puede ver cualquier animal (aunque no tenga finca_id)
+  // User/Viewer necesitan tener finca asignada
+  if (!finca_id && rolUsuario !== 'admin') {
     return res.status(400).json({ 
       error: "Usuario sin finca asignada" 
     });
   }
 
   try {
-    // ⭐ Solo buscar en la finca del usuario
-    const query = `
+    // ⭐ Query base con JOIN
+    let query = `
       SELECT 
         ra.*,
-        r.nombre_raza,
+        r.nombre_raza as raza,
         f.nombre as finca_nombre
       FROM registro_animal ra
       LEFT JOIN raza r ON ra.raza_id_raza = r.id_raza
       LEFT JOIN fincas f ON ra.finca_id = f.id
-      WHERE ra.chip_animal = ? AND ra.finca_id = ?
+      WHERE ra.chip_animal = ?
     `;
     
-    const [results] = await db.query(query, [chip_animal, finca_id]);
+    let params = [chip_animal];
+
+    // ⭐ Si NO es admin, filtrar por finca
+    if (rolUsuario !== 'admin' && finca_id) {
+      query += " AND ra.finca_id = ?";
+      params.push(finca_id);
+    }
+
+    console.log("📊 Query:", query);
+    console.log("📊 Params:", params);
+    
+    const [results] = await db.query(query, params);
 
     if (results.length === 0) {
       return res.status(404).json({ 
-        error: "Animal no encontrado en tu finca" 
+        error: "Animal no encontrado" 
       });
     }
 
-    console.log("✅ Animal encontrado");
+    console.log("✅ Animal encontrado:", results[0].chip_animal, "- Raza:", results[0].raza);
     res.status(200).json(results[0]);
   } catch (err) {
     console.error("❌ Error al buscar animal:", err);
     res.status(500).json({ error: "Error al obtener el animal" });
   }
 });
+
 
 // ============================================
 // PUT /register/update/:chip_animal - Actualizar animal
