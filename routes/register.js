@@ -600,4 +600,56 @@ router.get("/razas", async (req, res) => {
   }
 });
 
+// ============================================
+// GET /register/mis-animales - Listar animales para informes
+// ⭐ Admin ve todos, otros ven solo de su finca
+// ============================================
+router.get('/mis-animales', verificarToken, cualquierUsuario, async (req, res) => {
+  const finca_id = req.usuario.finca_id;
+  const rolUsuario = req.usuario.rol;
+
+  console.log("📋 Listando animales para informes - Usuario:", req.usuario.correo, "- Rol:", rolUsuario, "- Finca:", finca_id);
+
+  if (!finca_id && rolUsuario !== 'admin') {
+    return res.status(400).json({ 
+      error: "Usuario sin finca asignada" 
+    });
+  }
+
+  try {
+    let query = `
+      SELECT 
+        ra.chip_animal,
+        ra.categoria,
+        ra.ubicacion,
+        ra.hierro,
+        r.nombre_raza AS raza,
+        f.nombre AS nombre_finca
+      FROM registro_animal ra
+      LEFT JOIN raza r ON ra.raza_id_raza = r.id_raza
+      LEFT JOIN fincas f ON ra.finca_id = f.id
+    `;
+
+    let queryParams = [];
+
+    // ⭐ Si no es admin, filtrar por finca
+    if (rolUsuario !== 'admin' && finca_id) {
+      query += ` WHERE ra.finca_id = ?`;
+      queryParams.push(finca_id);
+    }
+
+    query += ` ORDER BY ra.chip_animal ASC`;
+
+    const [results] = await db.query(query, queryParams);
+
+    console.log(`✅ ${results.length} animales encontrados para informes`);
+
+    res.json(results);
+  } catch (error) {
+    console.error("❌ Error al obtener animales para informes:", error);
+    res.status(500).json({ error: "Error al obtener animales" });
+  }
+});
+
 module.exports = router;
+

@@ -94,14 +94,27 @@ const verificarPropietario = (tabla, campoId = 'chip') => {
 
 // Bloquear acciones de escritura para viewers
 const bloquearViewer = (req, res, next) => {
+  console.log('🔒 bloquearViewer ejecutado');
+  console.log('👤 req.usuario:', req.usuario);
+  console.log('👤 Rol:', req.usuario?.rol);
+
+  if (!req.usuario) {
+    return res.status(401).json({ 
+      mensaje: "No autenticado. Token no válido o expirado." 
+    });
+  }
+
   if (req.usuario.rol === 'viewer') {
     return res.status(403).json({ 
       mensaje: "Los usuarios con rol 'viewer' solo pueden consultar información.",
       accion: "Solo lectura permitida"
     });
   }
+  
+  console.log('✅ bloquearViewer - Usuario permitido (admin/user)');
   next();
 };
+
 
 // ⭐ NUEVO: Alias más semánticos
 const puedeModificar = adminOUser;
