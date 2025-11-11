@@ -114,97 +114,36 @@ router.get("/:id/contraseña", verificarToken, soloAdmin, async (req, res) => {
 });
 
 // ============================================
-// POST /api/usuarios - Crear nuevo usuario
+// GET /api/usuarios - Listar todos los usuarios
+// ⭐ INCLUYE CONTRASEÑAS TEMPORALES
 // ============================================
-router.post("/", verificarToken, soloAdmin, async (req, res) => {
-  const { correo, contraseña, rol, finca_id } = req.body;
-
-  // Validación de campos obligatorios
-  if (!correo || !contraseña || !rol || !finca_id) {
-    return res.status(400).json({ 
-      mensaje: "Todos los campos son obligatorios",
-      camposRequeridos: ["correo", "contraseña", "rol", "finca_id"]
-    });
-  }
-
-  // ⭐ Normalizar el rol (acepta inglés y español)
-  const rolNormalizado = normalizarRol(rol);
-  
-  if (!rolNormalizado) {
-    return res.status(400).json({ 
-      mensaje: "Rol inválido",
-      rolesPermitidos: [
-        'admin o administrador',
-        'user o usuario', 
-        'viewer o consultor'
-      ]
-    });
-  }
-
-  const connection = await db.getConnection();
-
+router.get("/", verificarToken, soloAdmin, async (req, res) => {
   try {
-    await connection.beginTransaction();
+    // ⭐ Query con JOIN para obtener contraseñas temporales
+    const [usuarios] = await db.query(`
+      SELECT 
+        u.id,
+        u.correo,
+        u.rol,
+        u.finca_id,
+        u.creado_en,
+        f.nombre as finca_nombre,
+        ct.contraseña_temporal as contraseña
+      FROM usuarios u
+      LEFT JOIN fincas f ON u.finca_id = f.id
+      LEFT JOIN contraseñas_temporales ct ON u.id = ct.usuario_id AND ct.activa = TRUE
+      ORDER BY u.creado_en DESC
+    `);
 
-    // ⭐ Verificar que la finca exista
-    const fincaExiste = await Finca.existe(finca_id);
-    if (!fincaExiste) {
-      await connection.rollback();
-      connection.release();
-      return res.status(404).json({ 
-        mensaje: "La finca especificada no existe" 
-      });
-    }
+    console.log('✅ Usuarios obtenidos con contraseñas:', usuarios.length);
 
-    // Verificar que el correo no esté registrado
-    const usuarioExistente = await Usuario.buscarPorCorreo(correo);
-    if (usuarioExistente) {
-      await connection.rollback();
-      connection.release();
-      return res.status(409).json({ 
-        mensaje: "El correo ya está registrado" 
-      });
-    }
-
-    const contraseñaCifrada = await bcrypt.hash(contraseña, 10);
-
-    const nuevoUsuario = await Usuario.crear({
-      correo,
-      contraseña: contraseñaCifrada,
-      rol: rolNormalizado,
-      finca_id: finca_id
-    });
-
-    await connection.query(
-      `INSERT INTO contraseñas_temporales (usuario_id, contraseña_temporal, activa) 
-       VALUES (?, ?, TRUE)`,
-      [nuevoUsuario.id, contraseña]
-    );
-
-    await connection.commit();
-    connection.release();
-
-    // Obtener información de la finca
-    const finca = await Finca.buscarPorId(finca_id);
-
-    res.status(201).json({
-      mensaje: "Usuario creado exitosamente",
-      usuario: {
-        id: nuevoUsuario.id,
-        correo: nuevoUsuario.correo,
-        rol: nuevoUsuario.rol,
-        finca_id: nuevoUsuario.finca_id,
-        finca_nombre: finca.nombre
-      },
-      contraseña_asignada: contraseña
-    });
+    res.json(usuarios);
   } catch (error) {
-    await connection.rollback();
-    connection.release();
-    console.error("Error al crear usuario:", error);
-    res.status(500).json({ mensaje: "Error al crear usuario" });
+    console.error("❌ Error al obtener usuarios:", error);
+    res.status(500).json({ mensaje: "Error al obtener usuarios" });
   }
 });
+
 
 // ============================================
 // PUT /api/usuarios/:id - Actualizar usuario
