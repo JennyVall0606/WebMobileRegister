@@ -24,29 +24,30 @@ const normalizarRol = (rol) => {
 };
 
 // ============================================
-// GET /api/usuarios - Listar todos los usuarios
+// GET /api/usuarios - Listar todos los usuarios CON CONTRASEÑAS
 // ============================================
 router.get("/", verificarToken, soloAdmin, async (req, res) => {
   try {
-    const usuarios = await Usuario.obtenerTodos();
-    
-    const usuariosSeguros = usuarios.map(u => ({
-      id: u.id,
-      correo: u.correo,
-      rol: u.rol,
-      finca_id: u.finca_id,
-      finca_nombre: u.finca_nombre || 'Sin finca asignada',
-      creado_en: u.creado_en,
-      tiene_contraseña_temporal: true
-    }));
+    const [usuarios] = await db.query(`
+      SELECT 
+        u.id,
+        u.correo,
+        u.rol,
+        u.finca_id,
+        u.creado_en,
+        f.nombre as finca_nombre,
+        ct.contraseña_temporal as contraseña
+      FROM usuarios u
+      LEFT JOIN fincas f ON u.finca_id = f.id
+      LEFT JOIN contraseñas_temporales ct ON u.id = ct.usuario_id AND ct.activa = TRUE
+      ORDER BY u.creado_en DESC
+    `);
 
-    res.json({
-      mensaje: "Usuarios obtenidos exitosamente",
-      total: usuariosSeguros.length,
-      usuarios: usuariosSeguros
-    });
+    console.log('✅ Usuarios obtenidos con contraseñas:', usuarios.length);
+
+    res.json(usuarios);
   } catch (error) {
-    console.error("Error al obtener usuarios:", error);
+    console.error("❌ Error al obtener usuarios:", error);
     res.status(500).json({ mensaje: "Error al obtener usuarios" });
   }
 });
@@ -82,68 +83,97 @@ router.get("/:id", verificarToken, soloAdmin, async (req, res) => {
 });
 
 // ============================================
-// GET /api/usuarios/:id/contraseña - Ver contraseña temporal
+// POST /api/usuarios - Crear nuevo usuario
 // ============================================
-router.get("/:id/contraseña", verificarToken, soloAdmin, async (req, res) => {
-  const { id } = req.params;
+router.post("/", verificarToken, soloAdmin, async (req, res) => {
+  const { correo, contraseña, rol, finca_id } = req.body;
+
+  // Validación de campos obligatorios
+  if (!correo || !contraseña || !rol || !finca_id) {
+    return res.status(400).json({ 
+      mensaje: "Todos los campos son obligatorios",
+      camposRequeridos: ["correo", "contraseña", "rol", "finca_id"]
+    });
+  }
+
+  // Normalizar el rol
+  const rolNormalizado = normalizarRol(rol);
+  
+  if (!rolNormalizado) {
+    return res.status(400).json({ 
+      mensaje: "Rol inválido",
+      rolesPermitidos: [
+        'admin o administrador',
+        'user o usuario', 
+        'viewer o consultor'
+      ]
+    });
+  }
+
+  const connection = await db.getConnection();
 
   try {
-    const [contraseñaTemp] = await db.query(
-      `SELECT contraseña_temporal, fecha_creacion 
-       FROM contraseñas_temporales 
-       WHERE usuario_id = ? AND activa = TRUE 
-       ORDER BY fecha_creacion DESC 
-       LIMIT 1`,
-      [id]
-    );
+    await connection.beginTransaction();
 
-    if (contraseñaTemp.length === 0) {
+    // Verificar que la finca exista
+    const fincaExiste = await Finca.existe(finca_id);
+    if (!fincaExiste) {
+      await connection.rollback();
+      connection.release();
       return res.status(404).json({ 
-        mensaje: "No hay contraseña temporal disponible para este usuario" 
+        mensaje: "La finca especificada no existe" 
       });
     }
 
-    res.json({
-      contraseña: contraseñaTemp[0].contraseña_temporal,
-      fecha_creacion: contraseñaTemp[0].fecha_creacion
+    // Verificar que el correo no esté registrado
+    const usuarioExistente = await Usuario.buscarPorCorreo(correo);
+    if (usuarioExistente) {
+      await connection.rollback();
+      connection.release();
+      return res.status(409).json({ 
+        mensaje: "El correo ya está registrado" 
+      });
+    }
+
+    const contraseñaCifrada = await bcrypt.hash(contraseña, 10);
+
+    const nuevoUsuario = await Usuario.crear({
+      correo,
+      contraseña: contraseñaCifrada,
+      rol: rolNormalizado,
+      finca_id: finca_id
+    });
+
+    await connection.query(
+      `INSERT INTO contraseñas_temporales (usuario_id, contraseña_temporal, activa) 
+       VALUES (?, ?, TRUE)`,
+      [nuevoUsuario.id, contraseña]
+    );
+
+    await connection.commit();
+    connection.release();
+
+    // Obtener información de la finca
+    const finca = await Finca.buscarPorId(finca_id);
+
+    res.status(201).json({
+      mensaje: "Usuario creado exitosamente",
+      usuario: {
+        id: nuevoUsuario.id,
+        correo: nuevoUsuario.correo,
+        rol: nuevoUsuario.rol,
+        finca_id: nuevoUsuario.finca_id,
+        finca_nombre: finca.nombre
+      },
+      contraseña_asignada: contraseña
     });
   } catch (error) {
-    console.error("Error al obtener contraseña:", error);
-    res.status(500).json({ mensaje: "Error al obtener contraseña" });
+    await connection.rollback();
+    connection.release();
+    console.error("Error al crear usuario:", error);
+    res.status(500).json({ mensaje: "Error al crear usuario" });
   }
 });
-
-// ============================================
-// GET /api/usuarios - Listar todos los usuarios
-// ⭐ INCLUYE CONTRASEÑAS TEMPORALES
-// ============================================
-router.get("/", verificarToken, soloAdmin, async (req, res) => {
-  try {
-    // ⭐ Query con JOIN para obtener contraseñas temporales
-    const [usuarios] = await db.query(`
-      SELECT 
-        u.id,
-        u.correo,
-        u.rol,
-        u.finca_id,
-        u.creado_en,
-        f.nombre as finca_nombre,
-        ct.contraseña_temporal as contraseña
-      FROM usuarios u
-      LEFT JOIN fincas f ON u.finca_id = f.id
-      LEFT JOIN contraseñas_temporales ct ON u.id = ct.usuario_id AND ct.activa = TRUE
-      ORDER BY u.creado_en DESC
-    `);
-
-    console.log('✅ Usuarios obtenidos con contraseñas:', usuarios.length);
-
-    res.json(usuarios);
-  } catch (error) {
-    console.error("❌ Error al obtener usuarios:", error);
-    res.status(500).json({ mensaje: "Error al obtener usuarios" });
-  }
-});
-
 
 // ============================================
 // PUT /api/usuarios/:id - Actualizar usuario
@@ -164,7 +194,7 @@ router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
       return res.status(404).json({ mensaje: "Usuario no encontrado" });
     }
 
-    // ⭐ Si se proporciona finca_id, verificar que exista
+    // Si se proporciona finca_id, verificar que exista
     if (finca_id !== undefined) {
       const fincaExiste = await Finca.existe(finca_id);
       if (!fincaExiste) {
@@ -176,7 +206,7 @@ router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
       }
     }
 
-    // ⭐ Normalizar el rol si se proporciona
+    // Normalizar el rol si se proporciona
     let rolNormalizado = null;
     if (rol) {
       rolNormalizado = normalizarRol(rol);
