@@ -249,19 +249,42 @@ router.get("/mis-animales", verificarToken, async (req, res) => {
     let query;
     let params = [];
 
+    // ⭐ ACTUALIZADO: Hacer JOIN con razas y fincas
+    const baseQuery = `
+      SELECT 
+        registro_animal.*,
+        razas.nombre_raza as raza,
+        fincas.nombre as finca_nombre
+      FROM registro_animal
+      LEFT JOIN razas ON registro_animal.raza_id_raza = razas.id_raza
+      LEFT JOIN fincas ON registro_animal.finca_id = fincas.id
+    `;
+
     if (rolUsuario === 'admin') {
       if (finca_id) {
-        query = "SELECT * FROM registro_animal WHERE finca_id = ?";
+        query = baseQuery + " WHERE registro_animal.finca_id = ?";
         params = [finca_id];
       } else {
-        query = "SELECT * FROM registro_animal";
+        query = baseQuery; // Admin sin finca ve todos
       }
     } else {
-      query = "SELECT * FROM registro_animal WHERE finca_id = ?";
+      query = baseQuery + " WHERE registro_animal.finca_id = ?";
       params = [finca_id];
     }
 
+    console.log('📊 Ejecutando query:', query);
+    console.log('📊 Con parámetros:', params);
+
     const [animales] = await db.query(query, params);
+
+    console.log('✅ Animales obtenidos:', animales.length);
+    if (animales.length > 0) {
+      console.log('📊 Primer animal con raza:', {
+        chip: animales[0].chip_animal,
+        raza: animales[0].raza,
+        finca_nombre: animales[0].finca_nombre
+      });
+    }
 
     res.json({
       total: animales.length,
@@ -272,7 +295,8 @@ router.get("/mis-animales", verificarToken, async (req, res) => {
     console.error("❌ Error al obtener animales:", error);
     res.status(500).json({ mensaje: "Error al obtener animales" });
   }
-}); 
+});
+
 
 // ============================================
 // 📊 Obtener perfil del usuario actual
