@@ -244,10 +244,15 @@ router.get("/mis-animales", verificarToken, async (req, res) => {
   const rolUsuario = req.usuario.rol;
 
   try {
+    // ⭐ LOG TEMPORAL
+    console.log('🔍 Consultando animales para:', {
+      rol: rolUsuario,
+      finca_id: finca_id
+    });
+
     let query;
     let params = [];
 
-    // ⭐ CORREGIDO: Usar 'raza' en lugar de 'razas'
     const baseQuery = `
       SELECT 
         registro_animal.*,
@@ -258,30 +263,35 @@ router.get("/mis-animales", verificarToken, async (req, res) => {
       LEFT JOIN fincas ON registro_animal.finca_id = fincas.id
     `;
 
+    // ⭐ CORREGIDO: Admin sin finca_id ve TODOS los animales
     if (rolUsuario === 'admin') {
-      if (finca_id) {
-        query = baseQuery + " WHERE registro_animal.finca_id = ?";
-        params = [finca_id];
-      } else {
-        query = baseQuery;
-      }
+      query = baseQuery;  // SIN FILTRO
+      params = [];
+      console.log('👑 Admin: obteniendo TODOS los animales');
     } else {
+      // User/Viewer: solo su finca
+      if (!finca_id) {
+        return res.status(400).json({ 
+          mensaje: "Usuario sin finca asignada" 
+        });
+      }
       query = baseQuery + " WHERE registro_animal.finca_id = ?";
       params = [finca_id];
+      console.log('👤 User/Viewer: filtrando por finca', finca_id);
     }
 
-    console.log('📊 Ejecutando query para rol:', rolUsuario, '- Finca:', finca_id);
+    console.log('📊 Query a ejecutar:', query.substring(0, 100) + '...');
 
     const [animales] = await db.query(query, params);
 
-    console.log('✅ Animales obtenidos:', animales.length);
-    if (animales.length > 0) {
-      console.log('📊 Primer animal:', {
-        chip: animales[0].chip_animal,
-        raza: animales[0].raza,
-        finca: animales[0].finca_nombre
-      });
-    }
+    console.log('✅ Total animales encontrados:', animales.length);
+    
+    // ⭐ LOG: Contar por finca
+    const porFinca = {};
+    animales.forEach(a => {
+      porFinca[a.finca_id] = (porFinca[a.finca_id] || 0) + 1;
+    });
+    console.log('📊 Animales por finca:', porFinca);
 
     res.json(animales);
 
@@ -294,6 +304,7 @@ router.get("/mis-animales", verificarToken, async (req, res) => {
     });
   }
 });
+
 
 
 
