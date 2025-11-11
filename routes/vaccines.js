@@ -8,12 +8,14 @@ const { adminOUser, cualquierUsuario, bloquearViewer } = require("../middlewares
 // POST /vaccines/add - Crear nueva vacuna
 // Admin y User pueden crear
 // ⭐ Viewer NO puede crear (bloqueado)
-// ⭐ Vacuna se asigna a un animal de la FINCA del usuario
+// ⭐ Admin puede trabajar sin finca_id asignado
 // ============================================
 router.post("/add", verificarToken, bloquearViewer, async (req, res) => {
+  const rolUsuario = req.usuario?.rol;
   const finca_id = req.usuario?.finca_id;
 
-  if (!finca_id) {
+  // ⭐ Admin puede trabajar sin finca_id asignado
+  if (!finca_id && rolUsuario !== 'admin') {
     return res.status(400).json({ 
       error: "Usuario sin finca asignada",
       detalle: "El usuario debe tener una finca asignada"
@@ -30,22 +32,29 @@ router.post("/add", verificarToken, bloquearViewer, async (req, res) => {
   } = req.body;
 
   console.log("📥 Datos recibidos:", { fecha_vacuna, chip_animal, dosis_administrada });
-  console.log("👤 Usuario registrando:", req.usuario.correo, "- Finca:", finca_id);
+  console.log("👤 Usuario registrando:", req.usuario.correo, "- Rol:", rolUsuario, "- Finca:", finca_id);
 
   if (!fecha_vacuna || !chip_animal || !dosis_administrada) {
     return res.status(400).json({ error: "Todos los campos son obligatorios (fecha_vacuna, chip_animal, dosis_administrada)" });
   }
 
   try {
-    // ⭐ Buscar el animal EN LA FINCA del usuario
-    const [animal] = await db.query(
-      "SELECT id, finca_id FROM registro_animal WHERE chip_animal = ? AND finca_id = ?",
-      [chip_animal, finca_id]
-    );
+    // ⭐ Buscar el animal (admin puede ver de cualquier finca)
+    let animalQuery = "SELECT id, finca_id FROM registro_animal WHERE chip_animal = ?";
+    let animalParams = [chip_animal];
+
+    if (rolUsuario !== 'admin' && finca_id) {
+      animalQuery += " AND finca_id = ?";
+      animalParams.push(finca_id);
+    }
+
+    const [animal] = await db.query(animalQuery, animalParams);
 
     if (animal.length === 0) {
       return res.status(404).json({
-        error: "El animal con este chip no existe en tu finca",
+        error: rolUsuario === 'admin' 
+          ? "El animal con este chip no existe" 
+          : "El animal con este chip no existe en tu finca",
       });
     }
 
@@ -109,25 +118,30 @@ router.post("/add", verificarToken, bloquearViewer, async (req, res) => {
 
 // ============================================
 // DELETE /vaccines/delete/:chip_animal - Eliminar vacunas de un animal
-// Admin y User pueden eliminar de SU FINCA
-// ⭐ Viewer NO puede eliminar (bloqueado)
+// ⭐ Admin puede eliminar de cualquier finca
 // ============================================
 router.delete("/delete/:chip_animal", verificarToken, bloquearViewer, async (req, res) => {
   const { chip_animal } = req.params;
   const finca_id = req.usuario.finca_id;
+  const rolUsuario = req.usuario.rol;
 
-  console.log("🗑️ Intentando eliminar vacunas del chip:", chip_animal, "- Finca:", finca_id);
+  console.log("🗑️ Intentando eliminar vacunas del chip:", chip_animal, "- Rol:", rolUsuario, "- Finca:", finca_id);
 
   try {
-    // ⭐ Buscar el animal EN LA FINCA del usuario
-    const [animal] = await db.query(
-      "SELECT id, finca_id FROM registro_animal WHERE chip_animal = ? AND finca_id = ?",
-      [chip_animal, finca_id]
-    );
+    // ⭐ Admin puede eliminar de cualquier finca
+    let animalQuery = "SELECT id, finca_id FROM registro_animal WHERE chip_animal = ?";
+    let animalParams = [chip_animal];
+
+    if (rolUsuario !== 'admin' && finca_id) {
+      animalQuery += " AND finca_id = ?";
+      animalParams.push(finca_id);
+    }
+
+    const [animal] = await db.query(animalQuery, animalParams);
 
     if (animal.length === 0) {
       return res.status(404).json({
-        error: "El animal con este chip no existe en tu finca",
+        error: "El animal con este chip no existe",
       });
     }
 
@@ -156,30 +170,37 @@ router.delete("/delete/:chip_animal", verificarToken, bloquearViewer, async (req
 
 // ============================================
 // GET /vaccines/all - Listar todas las vacunas
-// ⭐ Todos ven SOLO las vacunas de animales de SU FINCA
+// ⭐ Admin ve todas, otros ven solo de su finca
 // ============================================
 router.get("/all", verificarToken, cualquierUsuario, async (req, res) => {
   const finca_id = req.usuario.finca_id;
+  const rolUsuario = req.usuario.rol;
 
-  console.log("📋 Listando vacunas - Usuario:", req.usuario.correo, "- Finca:", finca_id);
+  console.log("📋 Listando vacunas - Usuario:", req.usuario.correo, "- Rol:", rolUsuario, "- Finca:", finca_id);
 
-  if (!finca_id) {
+  if (!finca_id && rolUsuario !== 'admin') {
     return res.status(400).json({ 
       error: "Usuario sin finca asignada" 
     });
   }
 
   try {
-    // ⭐ Solo ver vacunas de animales de SU finca
-    const query = `
+    let query = `
       SELECT hv.* 
       FROM historico_vacuna hv
       JOIN registro_animal ra ON hv.registro_animal_id = ra.id
-      WHERE ra.finca_id = ?
-      ORDER BY hv.fecha_vacuna DESC
     `;
 
-    const [results] = await db.query(query, [finca_id]);
+    let queryParams = [];
+
+    if (rolUsuario !== 'admin' && finca_id) {
+      query += ` WHERE ra.finca_id = ?`;
+      queryParams.push(finca_id);
+    }
+
+    query += ` ORDER BY hv.fecha_vacuna DESC`;
+
+    const [results] = await db.query(query, queryParams);
 
     console.log(`✅ ${results.length} vacunas encontradas`);
 
@@ -196,19 +217,20 @@ router.get("/all", verificarToken, cualquierUsuario, async (req, res) => {
 
 // ============================================
 // GET /vaccines/historico-vacunas - Histórico detallado
-// ⭐ Solo vacunas de animales de SU FINCA
+// ⭐ Admin ve todas, otros ven solo de su finca
 // ============================================
 router.get("/historico-vacunas", verificarToken, cualquierUsuario, async (req, res) => {
   const finca_id = req.usuario.finca_id;
+  const rolUsuario = req.usuario.rol;
 
-  if (!finca_id) {
+  if (!finca_id && rolUsuario !== 'admin') {
     return res.status(400).json({ 
       error: "Usuario sin finca asignada" 
     });
   }
 
   try {
-    const query = `
+    let query = `
       SELECT 
         hv.id,
         ra.chip_animal,
@@ -221,11 +243,18 @@ router.get("/historico-vacunas", verificarToken, cualquierUsuario, async (req, r
       JOIN registro_animal ra ON hv.registro_animal_id = ra.id
       LEFT JOIN tipo_vacunas tv ON hv.tipo_vacunas_id_tipo_vacuna = tv.id_tipo_vacuna
       LEFT JOIN nombre_vacunas nv ON hv.nombre_vacunas_id_vacuna = nv.id_vacuna
-      WHERE ra.finca_id = ?
-      ORDER BY hv.fecha_vacuna DESC
     `;
 
-    const [rows] = await db.query(query, [finca_id]);
+    let queryParams = [];
+
+    if (rolUsuario !== 'admin' && finca_id) {
+      query += ` WHERE ra.finca_id = ?`;
+      queryParams.push(finca_id);
+    }
+
+    query += ` ORDER BY hv.fecha_vacuna DESC`;
+
+    const [rows] = await db.query(query, queryParams);
 
     if (rows.length === 0) {
       return res.status(404).json({ error: "No se encontraron registros de vacunas" });
@@ -250,19 +279,20 @@ router.get("/historico-vacunas", verificarToken, cualquierUsuario, async (req, r
 
 // ============================================
 // GET /vaccines/animal/:chip_animal - Vacunas de un animal específico
-// ⭐ Solo si el animal pertenece a la finca del usuario
+// ⭐ Admin puede ver de cualquier animal
 // ============================================
 router.get("/animal/:chip_animal", verificarToken, cualquierUsuario, async (req, res) => {
   const { chip_animal } = req.params;
   const finca_id = req.usuario.finca_id;
+  const rolUsuario = req.usuario.rol;
 
-  if (!finca_id) {
+  if (!finca_id && rolUsuario !== 'admin') {
     return res.status(400).json({ 
       error: "Usuario sin finca asignada" 
     });
   }
 
-  const query = `
+  let query = `
     SELECT 
       hv.fecha_vacuna, 
       nv.nombre AS nombre_vacuna, 
@@ -276,16 +306,24 @@ router.get("/animal/:chip_animal", verificarToken, cualquierUsuario, async (req,
     JOIN registro_animal ra ON hv.registro_animal_id = ra.id
     LEFT JOIN nombre_vacunas nv ON hv.nombre_vacunas_id_vacuna = nv.id_vacuna
     LEFT JOIN tipo_vacunas tv ON hv.tipo_vacunas_id_tipo_vacuna = tv.id_tipo_vacuna
-    WHERE ra.chip_animal = ? AND ra.finca_id = ?
-    ORDER BY hv.fecha_vacuna DESC
+    WHERE ra.chip_animal = ?
   `;
 
+  let queryParams = [chip_animal];
+
+  if (rolUsuario !== 'admin' && finca_id) {
+    query += ` AND ra.finca_id = ?`;
+    queryParams.push(finca_id);
+  }
+
+  query += ` ORDER BY hv.fecha_vacuna DESC`;
+
   try {
-    const [results] = await db.query(query, [chip_animal, finca_id]);
+    const [results] = await db.query(query, queryParams);
 
     if (results.length === 0) {
       return res.status(404).json({
-        error: `No se encontraron registros de vacunas para el chip_animal ${chip_animal} en tu finca`,
+        error: `No se encontraron registros de vacunas para el chip_animal ${chip_animal}`,
       });
     }
 
@@ -298,12 +336,12 @@ router.get("/animal/:chip_animal", verificarToken, cualquierUsuario, async (req,
 
 // ============================================
 // PUT /vaccines/:id - Actualizar vacuna
-// Admin y User pueden actualizar de SU FINCA
-// ⭐ Viewer NO puede actualizar (bloqueado)
+// ⭐ Admin puede actualizar de cualquier finca
 // ============================================
 router.put("/:id", verificarToken, bloquearViewer, async (req, res) => {
   const { id } = req.params;
   const finca_id = req.usuario.finca_id;
+  const rolUsuario = req.usuario.rol;
 
   const {
     fecha_vacuna,
@@ -314,17 +352,24 @@ router.put("/:id", verificarToken, bloquearViewer, async (req, res) => {
   } = req.body;
 
   try {
-    // ⭐ Verificar que la vacuna pertenezca a un animal de SU finca
-    const [vacuna] = await db.query(
-      `SELECT hv.*, ra.finca_id 
-       FROM historico_vacuna hv
-       JOIN registro_animal ra ON hv.registro_animal_id = ra.id
-       WHERE hv.id = ? AND ra.finca_id = ?`,
-      [id, finca_id]
-    );
+    // ⭐ Admin puede actualizar de cualquier finca
+    let checkQuery = `
+      SELECT hv.*, ra.finca_id 
+      FROM historico_vacuna hv
+      JOIN registro_animal ra ON hv.registro_animal_id = ra.id
+      WHERE hv.id = ?
+    `;
+    let checkParams = [id];
+
+    if (rolUsuario !== 'admin' && finca_id) {
+      checkQuery += ` AND ra.finca_id = ?`;
+      checkParams.push(finca_id);
+    }
+
+    const [vacuna] = await db.query(checkQuery, checkParams);
 
     if (vacuna.length === 0) {
-      return res.status(404).json({ error: "Vacuna no encontrada en tu finca" });
+      return res.status(404).json({ error: "Vacuna no encontrada" });
     }
 
     const updateFields = [];
