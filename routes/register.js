@@ -122,7 +122,11 @@ router.post("/add", verificarToken, bloquearViewer, upload.single("foto"), async
     if (existingChip.length > 0) {
       await connection.rollback();
       connection.release();
-      return res.status(400).json({ error: "El chip ya está registrado en esta finca" });
+      return res.status(409).json({ 
+        error: "⚠️ El chip animal ya existe, no se puede volver a registrar",
+        mensaje: `El chip ${chip_animal} ya está registrado en esta finca`,
+        detalle: "Por favor verifica el número de chip o consulta los animales existentes"
+      });
     }
 
     // Validar raza
@@ -652,4 +656,3 @@ router.get('/mis-animales', verificarToken, cualquierUsuario, async (req, res) =
 });
 
 module.exports = router;
-
